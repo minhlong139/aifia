@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 
 from supabase import create_client, Client
-from .config import CrawlerConfig
+from ..config import CrawlerConfig
 
 
 class SupabaseStorage:
