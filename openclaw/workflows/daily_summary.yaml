@@ -1,0 +1,23 @@
+# OpenClaw Workflow: AIFIA Daily Market Summary
+# Generates a morning summary of the market
+
+name: aifia-daily-summary
+schedule:
+  kind: cron
+  expr: "30 8 * * 1-5"  # 8:30 AM weekdays
+  tz: Asia/Saigon
+payload:
+  kind: agentTurn
+  message: >
+    Generate a quick AIFIA market summary:
+    
+    Check Supabase for:
+    - Latest analysis results with highest scores
+    - Companies with new anomalies detected
+    - Kronos signals (BUY/SELL flagged)
+    
+    Format as a brief market briefing for the user.
+delivery:
+  mode: announce
+  channel: telegram
+  to: "664003548"

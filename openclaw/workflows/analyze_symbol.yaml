@@ -1,0 +1,24 @@
+# OpenClaw Workflow: AIFIA Analyze Symbol
+# Triggered on-demand to analyze a specific symbol
+
+# Usage:
+#   @aifia analyze FPT
+#   @aifia report VCB
+
+name: aifia-analyze-symbol
+payload:
+  kind: agentTurn
+  message: >
+    Analyze the stock symbol {{symbol}} using AIFIA.
+    
+    1. First check if data exists in Supabase
+    2. If not, run crawler for this symbol
+    3. Run analysis pipeline
+    4. Return a concise report with:
+       - Overall score (0-100)
+       - Risk level
+       - Investment verdict
+       - Key findings & anomalies (if any)
+       - Price prediction signal (if Kronos available)
+    
+    Keep it brief but informative.

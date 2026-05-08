@@ -1,0 +1,20 @@
+# OpenClaw Cron Workflow: AIFIA Daily Crawl
+# Schedule: Daily at 18:00 (after market close)
+# Target: isolated session
+
+name: aifia-daily-crawl
+schedule:
+  kind: cron
+  expr: "0 18 * * 1-5"  # Weekdays only (market days)
+  tz: Asia/Saigon
+payload:
+  kind: agentTurn
+  message: >
+    Run AIFIA daily crawl pipeline. Execute:
+    cd /opt/openclaw/.openclaw/workspace/aifia && python scripts/run_crawler.py
+    
+    If Supabase is not configured, run in dry-run mode. Report summary of what was crawled.
+delivery:
+  mode: announce
+  channel: telegram
+  to: "664003548"
