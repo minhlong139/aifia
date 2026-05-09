@@ -41,3 +41,7 @@ export async function getRecentAnalyses(limit = 20) {
 export async function getCompanyHighlights() {
   return call('getCompanyHighlights')
 }
+
+export async function getDataCoverage() {
+  return call('getDataCoverage')
+}

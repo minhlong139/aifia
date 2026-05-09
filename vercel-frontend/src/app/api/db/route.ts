@@ -91,6 +91,22 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(data ?? [])
       }
 
+      case 'getDataCoverage': {
+        // Returns which symbols have financial/price data
+        const [fin, price] = await Promise.all([
+          supabase.from('financial_reports').select('symbol'),
+          supabase.from('price_history').select('symbol'),
+        ])
+        const finSet = new Set((fin.data || []).map(i => i.symbol))
+        const priceSet = new Set((price.data || []).map(i => i.symbol))
+        // Take only VN100 or top companies
+        const coverage: Record<string, { financial: boolean; price: boolean }> = {}
+        for (const s of new Set([...finSet, ...priceSet])) {
+          coverage[s] = { financial: finSet.has(s), price: priceSet.has(s) }
+        }
+        return NextResponse.json(coverage)
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }
