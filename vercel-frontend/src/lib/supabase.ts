@@ -1,73 +1,45 @@
-import { createClient } from '@supabase/supabase-js'
+const API = '/api/db'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+async function call(action: string, params?: Record<string, unknown>) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, params }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 // Company queries
 export async function getCompanies(limit = 100) {
-  const { data } = await supabase
-    .from('companies')
-    .select('*')
-    .limit(limit)
-  return data || []
+  // For homepage listing - uses getRecentAnalyses equivalent
+  const data = await call('getRecentAnalyses', { limit })
+  return data
 }
 
 export async function getCompany(symbol: string) {
-  const { data } = await supabase
-    .from('companies')
-    .select('*')
-    .eq('symbol', symbol.toUpperCase())
-    .single()
-  return data
+  return call('getCompany', { symbol })
 }
 
 export async function getFinancialReports(symbol: string) {
-  const { data } = await supabase
-    .from('financial_reports')
-    .select('*')
-    .eq('symbol', symbol.toUpperCase())
-    .order('year', { ascending: false })
-    .order('quarter', { ascending: false })
-  return data || []
+  return call('getFinancialReports', { symbol })
 }
 
 export async function getPriceHistory(symbol: string, days = 365) {
-  const { data } = await supabase
-    .from('price_history')
-    .select('*')
-    .eq('symbol', symbol.toUpperCase())
-    .order('date', { ascending: false })
-    .limit(days)
-  return data || []
+  return call('getPriceHistory', { symbol, days })
 }
 
 export async function getAnalysis(symbol: string) {
-  const { data } = await supabase
-    .from('analysis_results')
-    .select('*')
-    .eq('symbol', symbol.toUpperCase())
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-  return data
+  return call('getAnalysis', { symbol })
 }
 
 export async function getRecentAnalyses(limit = 20) {
-  const { data } = await supabase
-    .from('analysis_results')
-    .select('*, companies(name)')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  return data || []
+  return call('getRecentAnalyses', { limit })
 }
 
 export async function getCompanyHighlights() {
-  const { data } = await supabase
-    .from('company_highlights')
-    .select('*')
-    .order('ai_rating', { ascending: false })
-    .limit(50)
-  return data || []
+  return call('getCompanyHighlights')
 }
