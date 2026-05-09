@@ -17,6 +17,16 @@ export async function POST(req: NextRequest) {
     const { action, params } = await req.json()
 
     switch (action) {
+      case 'getCompanies': {
+        const { limit = 100 } = params
+        const { data } = await supabase
+          .from('companies')
+          .select('symbol, name, industry, exchange')
+          .order('symbol', { ascending: true })
+          .limit(limit)
+        return NextResponse.json(data ?? [])
+      }
+
       case 'getCompany': {
         const { symbol } = params
         const { data, error } = await supabase
