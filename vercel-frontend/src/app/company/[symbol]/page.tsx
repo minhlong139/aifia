@@ -122,8 +122,12 @@ export default function CompanyPage() {
             {[
               ['Ngành', company.industry],
               ['Sàn', company.exchange],
-              ['Vốn hóa', company.market_cap ? `${(company.market_cap/1e9).toFixed(0)} tỷ` : 'N/A'],
-              ['CP lưu hành', company.outstanding_shares?.toLocaleString() || 'N/A'],
+              ['Vốn hóa', company.market_cap > 0
+                ? `${(company.market_cap/1e9).toFixed(0)} tỷ`
+                : '—'],
+              ['CP lưu hành', company.shares_outstanding
+                ? Number(company.shares_outstanding).toLocaleString()
+                : '—'],
             ].map(([label, value]) => (
               <div key={label as string} className="flex justify-between">
                 <dt className="text-gray-500">{label}</dt>
