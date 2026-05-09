@@ -15,9 +15,7 @@ async function call(action: string, params?: Record<string, unknown>) {
 
 // Company queries
 export async function getCompanies(limit = 100) {
-  // For homepage listing - uses getRecentAnalyses equivalent
-  const data = await call('getRecentAnalyses', { limit })
-  return data
+  return call('getCompanies', { limit })
 }
 
 export async function getCompany(symbol: string) {
