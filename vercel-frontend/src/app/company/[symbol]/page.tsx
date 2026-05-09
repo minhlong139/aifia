@@ -2,6 +2,7 @@
 
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { getCompany, getFinancialReports, getPriceHistory, getAnalysis } from '@/lib/supabase'
 
 export default function CompanyPage() {
   const params = useParams()
@@ -17,8 +18,6 @@ export default function CompanyPage() {
     if (!symbol) return
 
     async function load() {
-      const { getCompany, getFinancialReports, getPriceHistory, getAnalysis } = await import('@/lib/supabase')
-      
       const [c, r, p, a] = await Promise.all([
         getCompany(symbol).catch(() => null),
         getFinancialReports(symbol).catch(() => []),
