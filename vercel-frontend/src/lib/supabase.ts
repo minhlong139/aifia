@@ -45,3 +45,7 @@ export async function getCompanyHighlights() {
 export async function getDataCoverage() {
   return call('getDataCoverage')
 }
+
+export async function getKronosPrediction(symbol: string) {
+  return call('getKronosPrediction', { symbol })
+}

@@ -92,19 +92,34 @@ export async function POST(req: NextRequest) {
       }
 
       case 'getDataCoverage': {
-        // Returns which symbols have financial/price data
-        const [fin, price] = await Promise.all([
+        // Returns which symbols have financial/price + kronos data
+        const [fin, price, kronos] = await Promise.all([
           supabase.from('financial_reports').select('symbol'),
           supabase.from('price_history').select('symbol'),
+          supabase.from('kronos_predictions').select('symbol, metrics'),
         ])
         const finSet = new Set((fin.data || []).map(i => i.symbol))
         const priceSet = new Set((price.data || []).map(i => i.symbol))
-        // Take only VN100 or top companies
-        const coverage: Record<string, { financial: boolean; price: boolean }> = {}
+        const coverage: Record<string, { financial: boolean; price: boolean; kronos: any | null }> = {}
         for (const s of new Set([...finSet, ...priceSet])) {
-          coverage[s] = { financial: finSet.has(s), price: priceSet.has(s) }
+          coverage[s] = { financial: finSet.has(s), price: priceSet.has(s), kronos: null }
+        }
+        for (const k of (kronos.data || [])) {
+          if (coverage[k.symbol]) coverage[k.symbol].kronos = k.metrics
         }
         return NextResponse.json(coverage)
+      }
+
+      case 'getKronosPrediction': {
+        const { symbol } = params
+        const { data } = await supabase
+          .from('kronos_predictions')
+          .select('*')
+          .eq('symbol', symbol.toUpperCase())
+          .order('prediction_date', { ascending: false })
+          .limit(1)
+          .single()
+        return NextResponse.json(data ?? null)
       }
 
       default:

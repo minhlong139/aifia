@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { getCompany, getFinancialReports } from '@/lib/supabase'
+import { getCompany, getFinancialReports, getKronosPrediction } from '@/lib/supabase'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -39,15 +39,18 @@ export default function CompanyPage() {
   const [loading, setLoading] = useState(true)
   const [company, setCompany] = useState<any>(null)
   const [reports, setReports] = useState<any[]>([])
+  const [kronos, setKronos] = useState<any>(null)
 
   useEffect(() => {
     if (!symbol) return
     Promise.all([
       getCompany(symbol).catch(() => null),
       getFinancialReports(symbol).catch(() => []),
-    ]).then(([c, r]) => {
+      getKronosPrediction(symbol).catch(() => null),
+    ]).then(([c, r, k]) => {
       setCompany(c)
       setReports(r)
+      setKronos(k)
       setLoading(false)
     })
   }, [symbol])
@@ -176,8 +179,47 @@ export default function CompanyPage() {
           </div>
         </div>
 
-        {/* ── Sidebar: Financial Reports ── */}
+        {/* ── Sidebar ── */}
         <div className="space-y-6">
+
+          {/* ── Kronos Prediction ── */}
+          {kronos && kronos.metrics && (() => {
+            const m = kronos.metrics
+            const signalColors: Record<string, string> = {
+              STRONG_BUY: 'text-green-700 bg-green-50 border-green-200',
+              BUY: 'text-green-600 bg-green-50 border-green-200',
+              NEUTRAL: 'text-yellow-700 bg-yellow-50 border-yellow-200',
+              SELL: 'text-red-600 bg-red-50 border-red-200',
+              STRONG_SELL: 'text-red-700 bg-red-50 border-red-200',
+            }
+            const sc = signalColors[m.signal] || 'text-gray-700 bg-gray-50 border-gray-200'
+            return (
+              <div className="bg-white rounded-xl p-6 shadow-sm border">
+                <h2 className="text-lg font-semibold mb-4">🔮 Dự báo Kronos</h2>
+                <div className={`inline-block px-3 py-1 rounded-full text-sm font-bold border ${sc} mb-4`}>
+                  {m.signal} {m.change_pct > 0 ? '📈' : '📉'}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+                  {[
+                    ['Giá hiện tại', `$${m.current_price?.toFixed(2) || '—'}`],
+                    ['Dự báo', `$${m.predicted_price?.toFixed(2) || '—'}`],
+                    ['Thay đổi', `${m.change_pct > 0 ? '+' : ''}${m.change_pct?.toFixed(2) || '—'}%`],
+                    ['Cơ hội tăng', m.upside_prob != null ? `${m.upside_prob.toFixed(0)}%` : '—'],
+                    ['Biến động', m.volatility != null ? `${m.volatility.toFixed(1)}%` : '—'],
+                    ['Cao nhất', m.predicted_high != null ? `$${m.predicted_high.toFixed(2)}` : '—'],
+                    ['Thấp nhất', m.predicted_low != null ? `$${m.predicted_low.toFixed(2)}` : '—'],
+                  ].map(([label, val]) => (
+                    <div key={label as string} className="flex justify-between border-b border-gray-100 pb-1.5">
+                      <span className="text-gray-500">{label}</span>
+                      <span className="font-medium">{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* ── Financial Reports ── */}
           <div className="bg-white rounded-xl p-6 shadow-sm border">
             <h2 className="text-lg font-semibold mb-4">📊 Báo cáo tài chính</h2>
             {reports.length === 0 ? (

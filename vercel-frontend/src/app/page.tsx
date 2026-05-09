@@ -11,7 +11,7 @@ interface Company {
   exchange: string | null
 }
 
-type CoverageMap = Record<string, { financial: boolean; price: boolean }>
+type CoverageMap = Record<string, { financial: boolean; price: boolean; kronos: any | null }>
 
 export default function HomePage() {
   const router = useRouter()
@@ -105,6 +105,12 @@ export default function HomePage() {
                   {items.map((c) => {
                     const cov = coverage[c.symbol]
                     const hasData = cov?.financial
+                    const kronos = cov?.kronos
+                    const signalColors: Record<string, string> = {
+                      STRONG_BUY: 'bg-green-500', BUY: 'bg-green-400',
+                      NEUTRAL: 'bg-yellow-400',
+                      SELL: 'bg-red-400', STRONG_SELL: 'bg-red-500',
+                    }
                     return (
                       <button
                         key={c.symbol}
@@ -118,6 +124,13 @@ export default function HomePage() {
                         <div className="flex items-center gap-1.5">
                           <span className={`w-2 h-2 rounded-full shrink-0 ${hasData ? 'bg-green-400' : 'bg-gray-300'}`} />
                           <span className="font-bold text-sm text-blue-700">{c.symbol}</span>
+                          {kronos && kronos.signal && kronos.signal !== 'NEUTRAL' && (
+                            <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                              kronos.signal.includes('BUY') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {kronos.signal === 'STRONG_BUY' ? '🔥' : kronos.signal === 'STRONG_SELL' ? '💀' : kronos.signal === 'BUY' ? '⚡' : '⚠️'}
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-gray-500 truncate pl-4">{c.industry || '—'}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5 pl-4">{c.exchange || ''}</div>
