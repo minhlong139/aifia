@@ -25,6 +25,9 @@ Thumbs.db
 
 # Data
 data/
+
+# Runtime logs
+logs/
 *.csv
 *.parquet
 *.feather

@@ -1,0 +1,73 @@
+# ──────────────────────────────────────────────────────────────────────
+# AIFIA CRONTAB (OS-level) — crawl_stocks.sh
+# ──────────────────────────────────────────────────────────────────────
+# Install: crontab scripts/aifia_crontab.txt
+# Hoặc copy nội dung vào `crontab -e`
+# ──────────────────────────────────────────────────────────────────────
+# Giờ Việt Nam (Asia/Saigon, GMT+7). Market: 9:00-15:00 T2-T6.
+#
+# LƯU Ý: Các biến môi trường (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+# được load từ file .env trong cùng thư mục với project. KHÔNG nhúng
+# trực tiếp secret vào crontab để tránh lộ qua GitHub.
+# ──────────────────────────────────────────────────────────────────────
+
+# ==== BIẾN MÔI TRƯỜNG ====
+AIFIA_DIR=/opt/openclaw/.openclaw/workspace/aifia
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# ====================================================================
+# 1️⃣ CẬP NHẬT GIÁ SAU PHIÊN (QUAN TRỌNG NHẤT)
+# ====================================================================
+# Chạy 15:30 T2-T6 (đợi thị trường đóng cửa xong)
+# Chỉ crawl giá mới (incremental), ~30-60 giây
+30 15 * * 1-5  cd $AIFIA_DIR && source .env && ./scripts/crawl_stocks.sh daily_price >> logs/cron_daily_price.log 2>&1
+
+# ====================================================================
+# 2️⃣ DỰ BÁO KRONOS (sau khi có dữ liệu giá mới)
+# ====================================================================
+# Chạy 16:30 T2-T6 (cách daily_price 1 tiếng để dữ liệu kịp sync)
+# Chạy ~5-10 phút cho toàn bộ VN100
+30 16 * * 1-5  cd $AIFIA_DIR && source .env && ./scripts/crawl_stocks.sh kronos_prediction >> logs/cron_kronos.log 2>&1
+
+# ====================================================================
+# 3️⃣ CẬP NHẬT BÁO CÁO TÀI CHÍNH (hàng tuần)
+# ====================================================================
+# Chạy 17:00 thứ 7 (cuối tuần). Chỉ crawl financial data 2 năm gần nhất.
+# ~2-5 phút
+00 17 * * 6   cd $AIFIA_DIR && source .env && ./scripts/crawl_stocks.sh weekly_financial >> logs/cron_weekly_financial.log 2>&1
+
+# ====================================================================
+# 4️⃣ FULL CRAWL TOÀN BỘ VN100 (hàng tháng)
+# ====================================================================
+# Chạy 08:00 Chủ nhật đầu tiên mỗi tháng.
+# ~10-30 phút tùy rate limit. Crawl 5 năm dữ liệu.
+00 08 1-7 * 0  cd $AIFIA_DIR && source .env && ./scripts/crawl_stocks.sh full_vn100 >> logs/cron_full_vn100.log 2>&1
+
+# ====================================================================
+# GHI CHÚ CHIẾN LƯỢC
+# ====================================================================
+#
+# Tần suất crawl theo loại dữ liệu:
+#   📊 GIÁ (OHLCV):        Hằng ngày, 15:30 T2-T6
+#   🏢 THÔNG TIN CÔNG TY:  1 tuần/lần (thứ 7)
+#   📋 BÁO CÁO TÀI CHÍNH:  1 tuần/lần (thứ 7)
+#   🔮 DỰ BÁO KRONOS:      Hằng ngày, 16:30 T2-T6
+#   🌐 DỮ LIỆU VĨ MÔ:      1 tuần/lần (TBD)
+#   ⏱️ INTRADAY:            Không có nguồn realtime → tạm bỏ
+#
+# Ước lượng tài nguyên (mỗi lần chạy):
+#   daily_price:       ~30-60 giây, ~15 API calls/phút
+#   weekly_financial:  ~2-5 phút, ~15 API calls/phút
+#   full_vn100:        ~10-30 phút, ~2000-5000 records
+#   kronos_prediction: ~5-10 phút, full GPU/CPU load
+#
+# Lưu ý rate limit vnstock:
+#   - Dùng source='KBS' → ~15 requests/phút
+#   - Crawler có RateLimiter tự động điều tiết
+#   - Không cần chạy cùng lúc 2 task crawl (cách nhau >=1h)
+#
+# Dung lượng dữ liệu/tháng:
+#   - Price: ~100 symbols × ~22 ngày × ~50 bytes ≈ 110KB
+#   - Financial: ~100 symbols × 4 loại × 5 quý ≈ 2000 records
+#   - Total: < 50MB/tháng (không đáng kể)
