@@ -22,7 +22,7 @@ function fmtT(v: number | undefined | null, decimals = 2): string {
 }
 function fmtPct(v: number | undefined | null): string {
   if (v === undefined || v === null || (typeof v === 'number' && isNaN(v))) return '—'
-  return `${(v * 100).toFixed(1)}%`
+  return (v * 100).toLocaleString('vi-VN', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + '%'
 }
 function rd(reports: any[], t: string, q: number, y: number) {
   return reports.find(r => r.report_type === t && r.quarter === q && r.year === y)?.report_data || {}
@@ -199,9 +199,9 @@ export default function CompanyPage() {
               <div><span className="text-gray-500">Vốn hóa</span><br/><b>{company.market_cap > 0 ? fmtT(company.market_cap) : '—'}</b></div>
               <div><span className="text-gray-500">CP lưu hành</span><br/><b>{company.shares_outstanding ? FMT.format(Number(company.shares_outstanding)) : '—'}</b></div>
               {eps !== undefined && <div><span className="text-gray-500">EPS</span><br/><b>{eps.toLocaleString('vi-VN', {maxFractionDigits:0})} ₫</b></div>}
-              {pe !== undefined && <div><span className="text-gray-500">P/E</span><br/><b>{pe.toFixed(2)}</b></div>}
-              {pb !== undefined && <div><span className="text-gray-500">P/B</span><br/><b>{pb.toFixed(2)}</b></div>}
-              {roe !== undefined && <div><span className="text-gray-500">ROE</span><br/><b>{roe.toFixed(2)}%</b></div>}
+              {pe !== undefined && <div><span className="text-gray-500">P/E</span><br/><b>{pe.toLocaleString('vi-VN', {maximumFractionDigits:2, minimumFractionDigits:2})}</b></div>}
+              {pb !== undefined && <div><span className="text-gray-500">P/B</span><br/><b>{pb.toLocaleString('vi-VN', {maximumFractionDigits:2, minimumFractionDigits:2})}</b></div>}
+              {roe !== undefined && <div><span className="text-gray-500">ROE</span><br/><b>{roe.toLocaleString('vi-VN', {maximumFractionDigits:2, minimumFractionDigits:2})}%</b></div>}
             </div>
           </div>
 
@@ -248,7 +248,7 @@ export default function CompanyPage() {
                             </td>
                           ))}
                           <td className={`py-2 pl-2 text-right font-medium tabular-nums ${isAnomaly ? 'text-red-600' : 'text-gray-500'}`}>
-                            {change !== null ? `${change > 0 ? '+' : ''}${change.toFixed(1)}%` : '—'}
+                            {change !== null ? `${change > 0 ? '+' : ''}${change.toLocaleString('vi-VN', {maximumFractionDigits:1, minimumFractionDigits:1})}%` : '—'}
                           </td>
                         </tr>
                       )
@@ -290,7 +290,7 @@ export default function CompanyPage() {
                     a.severity === 'medium' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
                     'bg-gray-50 text-gray-600 border border-gray-200'
                   }`}>
-                    <b>{a.label}</b> thay đổi <b>{a.change > 0 ? '+' : ''}{a.change.toFixed(1)}%</b>
+                    <b>{a.label}</b> thay đổi <b>{a.change > 0 ? '+' : ''}{a.change.toLocaleString('vi-VN', {maximumFractionDigits:1, minimumFractionDigits:1})}%</b>
                     <span className="text-gray-500"> ({a.from} → {a.to})</span>
                     {Math.abs(a.change) > 50 && (
                       <span className="ml-2 text-xs font-bold">
@@ -342,9 +342,9 @@ export default function CompanyPage() {
                   {[
                     ['Giá hiện tại', fmtVND(m.current_price)],
                     ['Dự báo', fmtVND(m.predicted_price)],
-                    ['Thay đổi', `${m.change_pct>0?'+':''}${m.change_pct?.toFixed(2)||'—'}%`],
-                    ['Cơ hội tăng', m.upside_prob!=null?`${m.upside_prob.toFixed(0)}%`:'—'],
-                    ['Biến động', m.volatility!=null?`${m.volatility.toFixed(1)}%`:'—'],
+                    ['Thay đổi', `${m.change_pct>0?'+':''}${(m.change_pct??0).toLocaleString('vi-VN', {maximumFractionDigits:2, minimumFractionDigits:2})}%`],
+                    ['Cơ hội tăng', m.upside_prob!=null?`${m.upside_prob.toLocaleString('vi-VN', {maximumFractionDigits:0})}%`:'—'],
+                    ['Biến động', m.volatility!=null?`${m.volatility.toLocaleString('vi-VN', {maximumFractionDigits:1, minimumFractionDigits:1})}%`:'—'],
                     ['Cao nhất', fmtVND(m.predicted_high)],
                     ['Thấp nhất', fmtVND(m.predicted_low)],
                   ].map(([l,v]) => (
