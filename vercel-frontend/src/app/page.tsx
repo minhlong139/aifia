@@ -43,32 +43,16 @@ export default function HomePage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // When chat returns results, use those. Otherwise show all companies.
-  const displayed = useMemo(() => {
-    if (chatResults !== null) {
-      // Map chat results back to our local company data for full coverage info
-      return chatResults.map(chatC => {
-        const localC = companies.find(c => c.symbol === chatC.symbol)
-        return {
-          symbol: chatC.symbol,
-          name: localC?.name ?? chatC.name,
-          industry: localC?.industry ?? chatC.industry,
-          exchange: localC?.exchange ?? chatC.exchange,
-        }
-      })
-    }
-    return companies
-  }, [chatResults, companies])
-
+  // Group all companies alphabetically (only used when chat is inactive)
   const grouped = useMemo(() => {
     const map = new Map<string, Company[]>()
-    for (const c of displayed) {
+    for (const c of companies) {
       const letter = c.symbol[0]?.toUpperCase() || '#'
       if (!map.has(letter)) map.set(letter, [])
       map.get(letter)!.push(c)
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [displayed])
+  }, [companies])
 
   const dataCount = useMemo(() =>
     companies.filter(c => coverage[c.symbol]?.financial).length,
@@ -94,27 +78,29 @@ export default function HomePage() {
         <ChatBot onResultsChange={handleResultsChange} />
       </header>
 
+      {/* ── Hide main list when chat is active to avoid z-index overlap ── */}
       <div className="max-w-7xl mx-auto px-4 py-4">
         {loading ? (
           <div className="text-center py-20 text-gray-400">
             <div className="text-4xl mb-3 animate-pulse">⏳</div>
             <p>Đang tải danh sách cổ phiếu…</p>
           </div>
+        ) : chatResults !== null ? (
+          /* Chat is active — main list hidden, results shown in fixed-height area above */
+          null
         ) : grouped.length === 0 ? (
           <div className="text-center py-20 text-gray-400">
             <div className="text-4xl mb-3">🔍</div>
-            <p>{chatResults ? 'Không tìm thấy mã nào phù hợp' : 'Chưa có dữ liệu'}</p>
+            <p>Chưa có dữ liệu</p>
           </div>
         ) : (
           <>
             <div className="text-sm text-gray-400 mb-3">
-              {chatResults
-                ? `Kết quả tìm kiếm: ${displayed.length} mã`
-                : `Tổng số ${companies.length} mã — ${dataCount} có BCTC`}
+              Tổng số {companies.length} mã — {dataCount} có BCTC
             </div>
             {grouped.map(([letter, items]) => (
               <section key={letter} className="mb-5">
-                <h2 className="text-lg font-bold text-gray-700 mb-2 sticky top-[104px] bg-gray-50 py-1 z-10">
+                <h2 className="text-lg font-bold text-gray-700 mb-2 sticky top-[104px] bg-gray-50 py-1">
                   {letter}
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -126,6 +112,7 @@ export default function HomePage() {
                       <button
                         key={c.symbol}
                         onClick={() => router.push(`/company/${c.symbol}`)}
+                        onMouseEnter={() => router.prefetch(`/company/${c.symbol}`)}
                         className={`text-left bg-white rounded-xl px-3 py-2.5 shadow-sm border transition-all hover:shadow-md active:scale-[0.98] ${
                           hasData
                             ? 'border-gray-200 hover:border-blue-400'

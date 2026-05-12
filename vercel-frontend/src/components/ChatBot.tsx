@@ -245,6 +245,7 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
                     <button
                       key={c.symbol}
                       onClick={() => router.push(`/company/${c.symbol}`)}
+                      onMouseEnter={() => router.prefetch(`/company/${c.symbol}`)}
                       className="text-left bg-white rounded-xl px-3 py-2.5 shadow-sm border border-gray-200 transition-all hover:shadow-md hover:border-blue-400 active:scale-[0.98]"
                     >
                       <div className="flex items-center gap-1.5">
