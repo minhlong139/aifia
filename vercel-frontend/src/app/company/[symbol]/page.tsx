@@ -163,22 +163,7 @@ export default function CompanyPage() {
     return list
   }, [incomeReports])
 
-  if (loading) return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center"><div className="text-4xl mb-3 animate-pulse">⏳</div><p>Đang tải dữ liệu {curSymbol}…</p></div>
-    </main>
-  )
-  if (!company) return (
-    <main className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-2xl mx-auto text-center mt-20">
-        <div className="text-6xl mb-4">🔍</div>
-        <h1 className="text-2xl font-bold mb-2">Không tìm thấy {curSymbol}</h1>
-        <p className="text-gray-500">Mã cổ phiếu này chưa được crawl.</p>
-        <a href="/" className="text-blue-600 mt-4 inline-block">← Quay lại</a>
-      </div>
-    </main>
-  )
-
+  // Compute ratio data (pre-early-return so hooks stay above returns)
   const rdQ = rd(reports, 'ratio', 1, 2026)
   const eps = pick(rdQ, 'trailing_eps'), pe = pick(rdQ, 'p_e'), pb = pick(rdQ, 'p_b')
   const bvps = pick(rdQ, 'book_value_per_share_bvps'), roe = pick(rdQ, 'roe_trailling'), roa = pick(rdQ, 'roa_trailling')
@@ -225,6 +210,22 @@ export default function CompanyPage() {
       price,
     }
   }, [incomeReports, roe, pe, pb, kronos])
+
+  if (loading) return (
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center"><div className="text-4xl mb-3 animate-pulse">⏳</div><p>Đang tải dữ liệu {curSymbol}…</p></div>
+    </main>
+  )
+  if (!company) return (
+    <main className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-2xl mx-auto text-center mt-20">
+        <div className="text-6xl mb-4">🔍</div>
+        <h1 className="text-2xl font-bold mb-2">Không tìm thấy {curSymbol}</h1>
+        <p className="text-gray-500">Mã cổ phiếu này chưa được crawl.</p>
+        <a href="/" className="text-blue-600 mt-4 inline-block">← Quay lại</a>
+      </div>
+    </main>
+  )
 
   return (
     <main className="min-h-screen bg-gray-50">
