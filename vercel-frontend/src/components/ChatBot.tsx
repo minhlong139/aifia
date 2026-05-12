@@ -145,7 +145,7 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
               ref={inputRef}
               type="text"
               placeholder="Hỏi AI về cổ phiếu… (vd: 'mã nào kronos mua?')"
-              className="w-full pl-9 pr-4 py-2.5 border border-blue-200 rounded-xl bg-blue-50/30 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-2.5 border border-blue-200 rounded-xl bg-blue-50/30 text-base md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
