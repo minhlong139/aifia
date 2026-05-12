@@ -1,0 +1,93 @@
+# OpenClaw Workflow: AIFIA Daily Full Analysis
+# Schedule: Daily at 18:30 (after market close + crawl)
+# Target: isolated session
+# Orchestrates data collection + AI deep analysis for all 100 stocks
+
+name: aifia-daily-full-analysis
+schedule:
+  kind: cron
+  expr: "30 18 * * 1-5"
+  tz: Asia/Saigon
+payload:
+  kind: agentTurn
+  message: >
+    # AIFIA Daily Full Analysis Pipeline
+    
+    Chạy phân tích toàn diện cho toàn bộ 100 mã cổ phiếu.
+    
+    ## Bước 1: Chạy data preparation
+    
+    ```bash
+    cd /opt/openclaw/.openclaw/workspace/aifia
+    .venv/bin/python3 scripts/daily_full_analysis.py --prepare
+    ```
+    
+    Sau lệnh này, kiểm tra output. Nếu lỗi Supabase thì chạy với --skip-supabase.
+    
+    ## Bước 2: Đọc summary
+    
+    Đọc file: `data/history/_last/_summary.json` (hoặc dùng `date +%Y-%m-%d` để lấy hôm nay)
+    - In ra thống kê điểm số
+    - In ra top 5 cổ phiếu hấp dẫn nhất
+    - In ra bottom 5 cổ phiếu rủi ro nhất
+    - In ra tổng số bất thường phát hiện được
+    
+    ## Bước 3: AI Enhancement
+    
+    Với mỗi batch file trong `data/history/YYYY-MM-DD/batch_*.json` (mỗi batch 10 stocks):
+    
+    - **Đọc dữ liệu từng stock** trong batch
+    - **Phân tích sâu** từng mã dựa trên các chỉ số đã tính:
+      * Đánh giá triển vọng ngành
+      * Nhận xét về chất lượng tài chính
+      * Điểm mạnh / điểm yếu
+      * Khuyến nghị cụ thể
+      * Rủi ro tiềm ẩn
+    
+    - **Viết analysis nâng cao** cho mỗi stock vào file `data/history/YYYY-MM-DD/ai_batch_N.json`
+      với format:
+      ```json
+      {
+        "batch": N,
+        "enhanced_analyses": [
+          {
+            "symbol": "FPT",
+            "ai_commentary": "string - phân tích chi tiết bằng tiếng Việt (2-3 câu)",
+            "strengths": ["string"],
+            "weaknesses": ["string"],
+            "outlook": "TÍCH_CỰC|TRUNG_LẬP|TIÊU_CỰC",
+            "key_risks": ["string"]
+          }
+        ]
+      }
+      ```
+    
+    ## Bước 4: Merge & Upload
+    
+    Sau khi tất cả batch được AI enhancement:
+    
+    1. Merge các ai_batch_*.json files
+    2. Upload lên Supabase analysis_results với metadata AI-enhanced
+    3. Cập nhật company_highlights
+    
+    **Lưu ý:**
+    - Batch size: 10 stocks mỗi lần
+    - Nếu có 100 stocks → 10 batches
+    - Phân tích ngắn gọn, súc tích (2-3 câu/mã)
+    - Ưu tiên chất lượng hơn số lượng
+    - Dùng deepseek/deepseek-v4-flash model sẵn có
+    
+    ## Báo cáo kết quả
+    
+    Sau khi hoàn thành, báo cáo:
+    - Tổng số mã đã phân tích
+    - Điểm trung bình
+    - Số mã bất thường
+    - Stocks nổi bật nhất hôm nay
+    - Lessons rút ra (so với hôm qua)
+    
+    Giữ báo cáo ngắn gọn, dễ đọc trên Telegram.
+delivery:
+  mode: announce
+  channel: telegram
+  to: "664003548"

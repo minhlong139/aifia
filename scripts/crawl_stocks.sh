@@ -21,6 +21,15 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 mkdir -p "$LOG_DIR"
 
+# ──────────────────────────────────────────────────────────────────────────
+# Load .env với export (set -a) để Python con thấy được biến môi trường
+# ──────────────────────────────────────────────────────────────────────────
+if [ -f "$AIFIA_DIR/.env" ]; then
+    set -a
+    source "$AIFIA_DIR/.env"
+    set +a
+fi
+
 log() {
     echo "[$TIMESTAMP] $*" >> "$LOG_DIR/crawl_$(date +%Y%m%d).log"
     echo "[$TIMESTAMP] $*"
@@ -51,6 +60,17 @@ daily_price() {
         --symbols ALL \
         --incremental \
         --price-only
+}
+
+daily_price_and_upload() {
+    log "📊 [DAILY] Incremental price update"
+    run_script "daily_price" "$SCRIPTS/run_crawler.py" \
+        --symbols ALL \
+        --incremental \
+        --price-only
+    
+    log "☁️  [UPLOAD] Uploading prices to Supabase..."
+    run_script "upload_prices" "$SCRIPTS/upload_prices.py" --incremental
 }
 
 weekly_financial() {
@@ -124,21 +144,23 @@ check_health() {
 # CLI dispatch
 # ──────────────────────────────────────────────────────────────────────────
 case "${1:-help}" in
-    daily_price)        daily_price ;;
-    weekly_financial)   weekly_financial ;;
-    full_vn100)         full_vn100 ;;
-    kronos_prediction)  kronos_prediction ;;
-    intraday)           intraday ;;
-    check_health)       check_health ;;
+    daily_price)            daily_price ;;
+    daily_price_and_upload) daily_price_and_upload ;;
+    weekly_financial)       weekly_financial ;;
+    full_vn100)             full_vn100 ;;
+    kronos_prediction)      kronos_prediction ;;
+    intraday)               intraday ;;
+    check_health)           check_health ;;
     *)
         echo "Usage: $0 <task>"
         echo ""
         echo "Tasks:"
-        echo "  daily_price        [CORE] Cập nhật giá sau phiên (chạy 15:00 T2-T6)"
-        echo "  weekly_financial   [CORE] Refresh báo cáo tài chính (chạy cuối tuần)"
-        echo "  full_vn100         [BULK] Full crawl toàn bộ VN100 (chạy 1 lần/tháng)"
-        echo "  kronos_prediction  [AI]   Dự báo Kronos (chạy sau daily_price)"
-        echo "  intraday           [NÂNG CAO] Snapshot giá intraday VN30"
-        echo "  check_health       Kiểm tra cấu hình hệ thống"
+        echo "  daily_price             [CORE] Cập nhật giá (local JSON)"
+        echo "  daily_price_and_upload  [CORE] Cập nhật giá + upload Supabase (khuyên dùng)"
+        echo "  weekly_financial        [CORE] Refresh báo cáo tài chính (cuối tuần)"
+        echo "  full_vn100              [BULK] Full crawl toàn bộ VN100 (1 lần/tháng)"
+        echo "  kronos_prediction       [AI]   Dự báo Kronos (sau daily_price)"
+        echo "  intraday                [NÂNG CAO] Snapshot giá intraday VN30"
+        echo "  check_health            Kiểm tra cấu hình hệ thống"
         ;;
 esac

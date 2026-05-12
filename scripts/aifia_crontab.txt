@@ -20,8 +20,8 @@ PATH=/usr/local/bin:/usr/bin:/bin
 # 1️⃣ CẬP NHẬT GIÁ SAU PHIÊN (QUAN TRỌNG NHẤT)
 # ====================================================================
 # Chạy 15:30 T2-T6 (đợi thị trường đóng cửa xong)
-# Chỉ crawl giá mới (incremental), ~30-60 giây
-30 15 * * 1-5  cd $AIFIA_DIR && source .env && ./scripts/crawl_stocks.sh daily_price >> logs/cron_daily_price.log 2>&1
+# Chỉ crawl giá mới (incremental) + upload lên Supabase, ~30-60 giây
+30 15 * * 1-5  cd $AIFIA_DIR && set -a && source .env && set +a && ./scripts/crawl_stocks.sh daily_price_and_upload >> logs/cron_daily_price.log 2>&1
 
 # ====================================================================
 # 2️⃣ DỰ BÁO KRONOS (sau khi có dữ liệu giá mới)

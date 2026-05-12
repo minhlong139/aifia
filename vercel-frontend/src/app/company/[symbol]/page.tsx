@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState, useMemo } from 'react'
-import { getCompany, getFinancialReports, getKronosPrediction, getCompanies } from '@/lib/supabase'
+import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis } from '@/lib/supabase'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -36,17 +36,25 @@ const PL_FIELDS = [
   { key: 'pbt', label: 'LN trước thuế', keys: ['xi.profit_before_tax', 'n_15.profit_before_tax', 'profit_before_tax'] },
   { key: 'np', label: 'LN sau thuế', keys: ['xiii.net_profit_after_tax', 'n_18.net_profit_after_tax', 'xv.net_profit_atttributable_to_the_equity_holders_of_the_bank', 'net_profit_after_tax'] },
 ]
-function getPL(income: any[]) {
-  const sorted = [...income].sort((a, b) => b.year - a.year || b.quarter - a.quarter)
-  const latest = sorted[0]
-  if (!latest) return { latest: null, fields: {} }
-  const d = latest.report_data || {}
-  const fields: Record<string, number> = {}
-  for (const f of PL_FIELDS) {
-    const v = pick(d, ...f.keys)
-    if (v !== undefined) fields[f.key] = v
-  }
-  return { latest: `${latest.quarter}/${latest.year}`, fields }
+
+// ── Score color helpers ──
+function scoreColor(s: number): string {
+  if (s >= 75) return 'bg-green-500'
+  if (s >= 60) return 'bg-blue-500'
+  if (s >= 45) return 'bg-yellow-500'
+  return 'bg-red-500'
+}
+function scoreBg(s: number): string {
+  if (s >= 75) return 'bg-green-50 border-green-200'
+  if (s >= 60) return 'bg-blue-50 border-blue-200'
+  if (s >= 45) return 'bg-yellow-50 border-yellow-200'
+  return 'bg-red-50 border-red-200'
+}
+function scoreText(s: number): string {
+  if (s >= 75) return 'text-green-800'
+  if (s >= 60) return 'text-blue-800'
+  if (s >= 45) return 'text-yellow-800'
+  return 'text-red-800'
 }
 
 // ── Component ────────────────────────────────────────
@@ -59,6 +67,7 @@ export default function CompanyPage() {
   const [company, setCompany] = useState<any>(null)
   const [reports, setReports] = useState<any[]>([])
   const [kronos, setKronos] = useState<any>(null)
+  const [analysis, setAnalysis] = useState<any>(null)
   const [allSymbols, setAllSymbols] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<'pl' | 'balance' | 'cf'>('pl')
 
@@ -71,11 +80,19 @@ export default function CompanyPage() {
       getFinancialReports(curSymbol).catch(() => []),
       getKronosPrediction(curSymbol).catch(() => null),
       getCompanies(100).catch(() => [] as any[]),
-    ]).then(([c, r, k, companies]) => {
+      getAnalysis(curSymbol).catch(() => null),
+    ]).then(([c, r, k, companies, a]) => {
       setCompany(c)
       setReports(r)
       setKronos(k)
       setAllSymbols((companies as any[]).map((x: any) => x.symbol))
+      // Parse analysis result JSON
+      if (a && a.result) {
+        try {
+          a.result = typeof a.result === 'string' ? JSON.parse(a.result) : a.result
+        } catch { a.result = {} }
+      }
+      setAnalysis(a)
       setLoading(false)
     })
   }, [curSymbol])
@@ -88,6 +105,13 @@ export default function CompanyPage() {
   // Parse reports
   const incomeReports = useMemo(() => reports.filter(r => r.report_type === 'income_statement'), [reports])
   const balanceReports = useMemo(() => reports.filter(r => r.report_type === 'balance_sheet'), [reports])
+
+  // Analysis result data
+  const anResult = analysis?.result as any
+  const anMetrics = anResult?.metrics || {}
+  const anAnomalies = anResult?.anomalies || []
+  const anScore = analysis?.score ?? anResult?.score
+  const anVerdict = analysis?.analysis_type?.includes('full') ? (anResult?.verdict || 'Chưa đánh giá') : null
 
   // P&L table with comparison
   const plTable = useMemo(() => {
@@ -112,10 +136,10 @@ export default function CompanyPage() {
     }
   }, [balanceReports])
 
-  // Anomalies
-  const anomalies = useMemo(() => {
+  // Anomalies from raw report data (existing)
+  const rawAnomalies = useMemo(() => {
     const sorted = [...incomeReports].sort((a, b) => b.year - a.year || b.quarter - a.quarter)
-    const list: { fieldKey: string; label: string; change: number; from: string; to: string; severity: string }[] = []
+    const list: any[] = []
     for (let i = 0; i < Math.min(sorted.length - 1, 3); i++) {
       const cur = sorted[i], prv = sorted[i + 1]
       const dc = cur.report_data || {}, dp = prv.report_data || {}
@@ -164,7 +188,7 @@ export default function CompanyPage() {
       {/* ── Header with prev/next ── */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center justify-between mb-1 flex-wrap gap-y-1">
             <a href="/" className="text-blue-600 text-sm">← Dashboard</a>
             <div className="flex items-center gap-1 text-sm">
               {prev ? (
@@ -204,6 +228,103 @@ export default function CompanyPage() {
               {roe !== undefined && <div><span className="text-gray-500">ROE</span><br/><b>{roe.toLocaleString('vi-VN', {maximumFractionDigits:2, minimumFractionDigits:2})}%</b></div>}
             </div>
           </div>
+
+          {/* ── AIFIA Score & Analysis ── */}
+          {anScore !== undefined && anScore !== null && (
+            <div className={`rounded-xl p-5 shadow-sm border ${scoreBg(anScore)}`}>
+              <div className="flex items-start justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold mb-1">🤖 AIFIA Đánh giá</h2>
+                  <div className="text-xs text-gray-500">
+                    {analysis?.metadata?.report_date || analysis?.created_at?.slice(0,10) || 'Mới nhất'}
+                    {anResult?.model_version && ` · ${anResult.model_version}`}
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl shadow ${scoreColor(anScore)}`}>
+                    {Math.round(anScore)}
+                  </div>
+                  <div className={`text-xs font-semibold mt-1 ${scoreText(anScore)}`}>
+                    {anVerdict || (anScore >= 75 ? 'HẤP_DẪN' : anScore >= 60 ? 'TÍCH_CỰC' : anScore >= 45 ? 'TRUNG_LẬP' : anScore >= 30 ? 'THẬN_TRỌNG' : 'RỦI_RO')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Key Metrics Grid */}
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                {anMetrics.revenue_t && <Metric label="Doanh thu (Q)" value={`${anMetrics.revenue_t} tỷ`} />}
+                {anMetrics.revenue_growth_qoq !== undefined && anMetrics.revenue_growth_qoq !== null &&
+                  <Metric label="Tăng trưởng DT" value={`${anMetrics.revenue_growth_qoq > 0 ? '+' : ''}${anMetrics.revenue_growth_qoq}%`}
+                    color={anMetrics.revenue_growth_qoq > 10 ? 'text-green-600' : anMetrics.revenue_growth_qoq < 0 ? 'text-red-600' : ''} />}
+                {anMetrics.net_margin && <Metric label="Biên LNST" value={`${anMetrics.net_margin}%`} />}
+                {anMetrics.roe !== undefined && anMetrics.roe !== null &&
+                  <Metric label="ROE" value={`${anMetrics.roe}%`}
+                    color={anMetrics.roe > 20 ? 'text-green-600' : anMetrics.roe < 10 ? 'text-red-600' : ''} />}
+                {anMetrics.pe !== undefined && anMetrics.pe !== null &&
+                  <Metric label="P/E" value={`${anMetrics.pe}x`}
+                    color={anMetrics.pe < 12 ? 'text-green-600' : anMetrics.pe > 25 ? 'text-yellow-600' : ''} />}
+                {anMetrics.pb !== undefined && anMetrics.pb !== null && <Metric label="P/B" value={`${anMetrics.pb}x`} />}
+                {anMetrics.de_ratio !== undefined && anMetrics.de_ratio !== null &&
+                  <Metric label="D/E" value={`${anMetrics.de_ratio}%`}
+                    color={anMetrics.de_ratio > 100 ? 'text-red-600' : anMetrics.de_ratio < 50 ? 'text-green-600' : ''} />}
+                {anMetrics.price && <Metric label="Giá" value={anMetrics.price.toLocaleString('vi-VN') + 'k'} />}
+                {anMetrics.price_change_1m !== undefined && anMetrics.price_change_1m !== null &&
+                  <Metric label="1 tháng" value={`${anMetrics.price_change_1m > 0 ? '+' : ''}${anMetrics.price_change_1m}%`}
+                    color={anMetrics.price_change_1m > 0 ? 'text-green-600' : 'text-red-600'} />}
+              </div>
+
+              {/* AI Commentary */}
+              {anResult?.ai_commentary && (
+                <div className="mt-4 p-3 bg-white/60 rounded-lg text-sm leading-relaxed text-gray-700">
+                  <p className="whitespace-pre-wrap">{anResult.ai_commentary}</p>
+                </div>
+              )}
+
+              {/* Strengths / Weaknesses */}
+              {((anResult?.strengths?.length > 0) || (anResult?.weaknesses?.length > 0)) && (
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {anResult.strengths?.length > 0 && (
+                    <div className="p-3 bg-green-50/80 rounded-lg border border-green-200">
+                      <div className="text-xs font-semibold text-green-700 mb-1">✅ Điểm mạnh</div>
+                      <ul className="text-xs text-green-800 space-y-1 list-disc list-inside">
+                        {anResult.strengths.slice(0, 4).map((s: string, i: number) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {anResult.weaknesses?.length > 0 && (
+                    <div className="p-3 bg-red-50/80 rounded-lg border border-red-200">
+                      <div className="text-xs font-semibold text-red-700 mb-1">⚠️ Điểm yếu</div>
+                      <ul className="text-xs text-red-800 space-y-1 list-disc list-inside">
+                        {anResult.weaknesses.slice(0, 4).map((s: string, i: number) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Key Risks */}
+              {anResult?.key_risks?.length > 0 && (
+                <div className="mt-3 p-3 bg-red-50/60 rounded-lg border border-red-200">
+                  <div className="text-xs font-semibold text-red-700 mb-1">🚨 Rủi ro chính</div>
+                  <ul className="text-xs text-red-800 space-y-1 list-disc list-inset">
+                    {anResult.key_risks.slice(0, 5).map((r: string, i: number) => <li key={i}>{r}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {/* AI Anomalies */}
+              {anAnomalies.filter((a: any) => a.severity === 'high').length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {anAnomalies.filter((a: any) => a.severity === 'high').slice(0, 3).map((a: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 text-xs bg-red-50 p-2 rounded border border-red-200">
+                      <span className="text-red-500 mt-0.5">🔴</span>
+                      <span className="text-red-800">{a.description}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── P&L Detailed Comparison ── */}
           {plTable && (
@@ -279,12 +400,12 @@ export default function CompanyPage() {
             </div>
           )}
 
-          {/* ── Anomalies ── */}
-          {anomalies.length > 0 && (
+          {/* ── Raw Anomalies (from report data) ── */}
+          {rawAnomalies.length > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border">
               <h2 className="text-lg font-semibold mb-3">⚠️ Biến động bất thường</h2>
               <div className="space-y-2">
-                {anomalies.slice(0, 8).map((a, i) => (
+                {rawAnomalies.slice(0, 8).map((a, i) => (
                   <div key={i} className={`p-3 rounded-lg text-sm ${
                     a.severity === 'high' ? 'bg-red-50 text-red-700 border border-red-200' :
                     a.severity === 'medium' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
@@ -303,15 +424,30 @@ export default function CompanyPage() {
             </div>
           )}
 
-          {/* ── AI nhận định ── */}
-          {anomalies.length > 0 && (
+          {/* ── Recommendations ── */}
+          {anResult?.recommendations?.length > 0 && (
+            <div className="bg-white rounded-xl p-5 shadow-sm border">
+              <h2 className="text-lg font-semibold mb-3">💡 Khuyến nghị</h2>
+              <ul className="space-y-2">
+                {anResult.recommendations.map((r: string, i: number) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                    <span className="text-blue-500 mt-0.5">•</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* ── AI nhận định (fallback) ── */}
+          {(!anResult?.recommendations?.length) && rawAnomalies.length > 0 && (
             <div className="bg-white rounded-xl p-5 shadow-sm border">
               <h2 className="text-lg font-semibold mb-3">🤖 Nhận định AI</h2>
               <div className="text-sm text-gray-700 leading-relaxed">
                 {(() => {
-                  const severe = anomalies.filter(a => a.severity === 'high').length
-                  const positive = anomalies.filter(a => a.change > 0 && a.fieldKey !== 'operating').length
-                  const negative = anomalies.filter(a => a.change < 0).length
+                  const severe = rawAnomalies.filter(a => a.severity === 'high').length
+                  const positive = rawAnomalies.filter(a => a.change > 0 && a.fieldKey !== 'operating').length
+                  const negative = rawAnomalies.filter(a => a.change < 0).length
                   const parts: string[] = []
                   if (severe > 0) parts.push(`Có ${severe} biến động lớn (>50%) cần lưu ý.`)
                   if (positive > negative) parts.push('Nhìn chung xu hướng kinh doanh khả quan với nhiều chỉ số tăng trưởng.')
@@ -375,5 +511,15 @@ export default function CompanyPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+// ── Metric Display Component ──
+function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="bg-white/70 rounded-lg p-2 border border-gray-200/70">
+      <div className="text-[10px] text-gray-400 uppercase tracking-wide">{label}</div>
+      <div className={`font-semibold text-sm mt-0.5 tabular-nums ${color || 'text-gray-800'}`}>{value}</div>
+    </div>
   )
 }
