@@ -2,6 +2,8 @@
 
 Hệ thống AI hỗ trợ phân tích báo cáo tài chính doanh nghiệp niêm yết trên thị trường chứng khoán Việt Nam (HOSE/HNX/UPCOM).
 
+🌐 **Live:** [aifia-wdpk.vercel.app](https://aifia-wdpk.vercel.app)
+
 ---
 
 ## 📦 Quick Start
@@ -15,11 +17,15 @@ pip install -r requirements.txt
 # 2. Copy .env và điền Supabase credentials
 cp .env.example .env
 
-# 3. Crawl thử 5 mã
-source .env
+# 3. Kiểm tra cấu hình
+set -a && source .env && set +a
 ./scripts/crawl_stocks.sh check_health
-./scripts/crawl_stocks.sh daily_price
+
+# 4. Crawl thử + upload lên Supabase
+./scripts/crawl_stocks.sh daily_price_and_upload
 ```
+
+> **⚠️ Luôn dùng `set -a && source .env && set +a`** (không chỉ `source .env`) để export biến môi trường sang Python. Nếu thiếu `set -a`, Python sẽ không thấy `SUPABASE_URL`/`SUPABASE_SERVICE_KEY`.
 
 ---
 
@@ -59,7 +65,7 @@ flowchart TB
     end
 
     subgraph Cron["OS Cron (độc lập)"]
-        DC[15:30 T2-T6<br/>daily_price]
+        DC[15:30 T2-T6<br/>daily_price_and_upload]
         KP[16:30 T2-T6<br/>kronos_prediction]
         WF[17:00 Thứ 7<br/>weekly_financial]
         FV[08:00 CN đầu tháng<br/>full_vn100]
@@ -99,16 +105,6 @@ flowchart TB
 4. **Fallback local JSON:** Nếu Supabase không available, crawl vẫn chạy và lưu file
 5. **Theo nhịp thị trường:** Chỉ crawl ngày có giao dịch (T2-T6), bỏ cuối tuần & nghỉ lễ
 
-### Dung lượng
-
-| Hạng mục | Tháng | Năm |
-|---|---|---|
-| Price history (100 stocks × 22 ngày) | ~11 MB | ~132 MB |
-| Financial reports (4 loại × 5 quý × 100 stocks) | ~5 MB | ~10 MB |
-| Company info (100 stocks) | ~2 MB | ~2 MB |
-| Kronos predictions | ~3 MB | ~36 MB |
-| **Tổng** | **~21 MB** | **~180 MB** |
-
 ---
 
 ## 🔧 Cài đặt OS Cron (Quan trọng)
@@ -127,44 +123,40 @@ crontab /opt/openclaw/.openclaw/workspace/aifia/scripts/aifia_crontab.txt
 crontab -e
 ```
 
-Dán nội dung sau (thay `<SUPABASE_SERVICE_KEY>` bằng key thật):
+Dán nội dung sau:
 
 ```cron
 # ──────────────────────────────────────────────────────────
 # AIFIA crawl schedule
 # ──────────────────────────────────────────────────────────
 
-# Biến môi trường (load từ .env — KHÔNG hardcode secret)
 SHELL=/bin/bash
 PATH=/usr/local/bin:/usr/bin:/bin
 
-# 📊 Cập nhật giá hàng ngày (15:30 T2-T6)
-30 15 * * 1-5  cd /opt/openclaw/.openclaw/workspace/aifia && source .env && ./scripts/crawl_stocks.sh daily_price >> logs/cron_daily_price.log 2>&1
+# ⚠️ Luôn dùng set -a trước source .env để export biến sang Python
+
+# 📊 Cập nhật giá + upload Supabase (15:30 T2-T6)
+30 15 * * 1-5  cd /opt/openclaw/.openclaw/workspace/aifia && set -a && source .env && set +a && ./scripts/crawl_stocks.sh daily_price_and_upload >> logs/cron_daily_price.log 2>&1
 
 # 🔮 Dự báo Kronos (16:30 T2-T6)
-30 16 * * 1-5  cd /opt/openclaw/.openclaw/workspace/aifia && source .env && ./scripts/crawl_stocks.sh kronos_prediction >> logs/cron_kronos.log 2>&1
+30 16 * * 1-5  cd /opt/openclaw/.openclaw/workspace/aifia && set -a && source .env && set +a && ./scripts/crawl_stocks.sh kronos_prediction >> logs/cron_kronos.log 2>&1
 
 # 📋 Báo cáo tài chính tuần (17:00 thứ 7)
-00 17 * * 6    cd /opt/openclaw/.openclaw/workspace/aifia && source .env && ./scripts/crawl_stocks.sh weekly_financial >> logs/cron_weekly_financial.log 2>&1
+00 17 * * 6    cd /opt/openclaw/.openclaw/workspace/aifia && set -a && source .env && set +a && ./scripts/crawl_stocks.sh weekly_financial >> logs/cron_weekly_financial.log 2>&1
 
 # 🔄 Full crawl tháng (08:00 CN đầu tháng)
-00 08 1-7 * 0  cd /opt/openclaw/.openclaw/workspace/aifia && source .env && ./scripts/crawl_stocks.sh full_vn100 >> logs/cron_full_vn100.log 2>&1
+00 08 1-7 * 0  cd /opt/openclaw/.openclaw/workspace/aifia && set -a && source .env && set +a && ./scripts/crawl_stocks.sh full_vn100 >> logs/cron_full_vn100.log 2>&1
 ```
 
-> ⚠️ **Bảo mật:** Không hardcode `SUPABASE_SERVICE_KEY` vào crontab. File `.env` đã được gitignore nên an toàn. Crontab chỉ cần lệnh `source .env` trước khi chạy script.
+> ⚠️ **Bảo mật:** Không hardcode secret vào crontab. File `.env` đã được gitignore.
+> ⚠️ **Quan trọng:** `set -a` là bắt buộc — nếu chỉ `source .env`, Python sẽ không thấy biến môi trường.
 
-### Kiểm tra cron đã chạy chưa
+### Kiểm tra cron
 
 ```bash
-# Danh sách cron đang active
-crontab -l
-
-# Log của từng task
-tail -f /opt/openclaw/.openclaw/workspace/aifia/logs/cron_daily_price.log
-tail -f /opt/openclaw/.openclaw/workspace/aifia/logs/cron_kronos.log
-
-# Log crawl tổng hợp
-tail -f /opt/openclaw/.openclaw/workspace/aifia/logs/crawl_$(date +%Y%m%d).log
+crontab -l                                          # Danh sách cron đang active
+tail -f logs/cron_daily_price.log                   # Log crawl giá
+tail -f logs/crawl_$(date +%Y%m%d).log              # Log crawl tổng hợp
 ```
 
 ---
@@ -177,7 +169,10 @@ tail -f /opt/openclaw/.openclaw/workspace/aifia/logs/crawl_$(date +%Y%m%d).log
 # Kiểm tra cấu hình (Python, Supabase, disk space)
 ./scripts/crawl_stocks.sh check_health
 
-# Crawl giá OHLCV (incremental — chỉ lấy ngày mới)
+# Crawl giá + upload lên Supabase (khuyên dùng)
+./scripts/crawl_stocks.sh daily_price_and_upload
+
+# Crawl giá (local JSON, không upload)
 ./scripts/crawl_stocks.sh daily_price
 
 # Crawl báo cáo tài chính & thông tin công ty
@@ -193,8 +188,7 @@ tail -f /opt/openclaw/.openclaw/workspace/aifia/logs/crawl_$(date +%Y%m%d).log
 ### Crawl Script (low-level)
 
 ```bash
-# Chạy trực tiếp với tùy chọn
-source .env
+set -a && source .env && set +a
 python scripts/run_crawler.py --price-only --incremental --symbols ACB VCB FPT
 python scripts/run_crawler.py --financial-only --symbols ACB VCB
 python scripts/run_crawler.py --symbols ALL --years 5
@@ -212,12 +206,25 @@ Tham số:
 | `--batch-size N` | Số mã mỗi batch (mặc định 10) |
 | `--dry-run` | Chạy thử, không ghi vào Supabase |
 
+### Upload lên Supabase
+
+```bash
+# Upload incremental (chỉ đẩy record mới nhất)
+set -a && source .env && set +a
+python scripts/upload_prices.py --incremental
+
+# Upload toàn bộ (đẩy lại tất cả records hiện có)
+python scripts/upload_prices.py
+```
+
 ### OpenClaw / Telegram
 
-Các workflow OpenClaw (trong `openclaw/workflows/`) vẫn hoạt động cho mục đích **tra cứu và tương tác**, không còn dùng để schedule crawl:
+Các workflow OpenClaw dùng cho **tra cứu và phân tích nâng cao**, không dùng để schedule crawl:
 
-- `analyze_symbol.yaml` — Phân tích mã CK theo yêu cầu qua Telegram
-- `daily_crawl.yaml` — **Không còn dùng** (giữ lại cho tương thích)
+- `daily_crawl.yaml` — ⚠️ Legacy (crawl giờ qua OS cron)
+- `daily_full_analysis.yaml` — Phân tích 100 mã + AI enhancement (18:30 T2-T6)
+- `daily_summary.yaml` — Báo cáo tổng quan thị trường cuối ngày
+- `analyze_symbol.yaml` — Tra cứu mã CK theo yêu cầu qua Telegram
 
 ---
 
@@ -233,12 +240,10 @@ aifia/
 ├── .gitignore
 │
 ├── crawler/                        # Layer 1: Data Crawler
-│   ├── __init__.py
 │   ├── pipeline.py                 # CrawlPipeline orchestrator
 │   ├── config.py                   # CrawlerConfig
 │   ├── sources/
-│   │   ├── vnstock_source.py       # Vnstock API integration
-│   │   └── ...
+│   │   └── vnstock_source.py       # Vnstock API integration
 │   ├── extractors/                 # Data parsing
 │   └── storage/
 │       └── __init__.py             # SupabaseStorage client
@@ -254,36 +259,51 @@ aifia/
 │   ├── price_*.json                # Price history mỗi mã
 │   ├── financial_*.json            # Báo cáo tài chính mỗi mã
 │   ├── company_*.json              # Thông tin công ty
-│   ├── crawl_summary.json          # Tổng kết lần crawl gần nhất
-│   └── predictions/                # Output Kronos
-│       └── kronos_vn100_*.json
+│   ├── history/YYYY-MM-DD/         # Phân tích theo ngày
+│   │   ├── batch_*.json            # Crawl batch data
+│   │   ├── ai_batch_*.json         # AI-enhanced analysis
+│   │   └── _summary.json           # Tổng kết ngày
+│   ├── predictions/                # Output Kronos
+│   │   └── kronos_vn100_*.json
+│   └── crawl_summary.json
 │
 ├── scripts/                        # Entry point scripts
-│   ├── crawl_stocks.sh             # 🆕 Master controller (OS cron entry point)
-│   ├── aifia_crontab.txt           # 🆕 Mẫu crontab cho OS cron
-│   ├── run_crawler.py              # 🆕 Đã thêm --price-only, --financial-only, --incremental
+│   ├── crawl_stocks.sh             # Master controller (OS cron)
+│   ├── aifia_crontab.txt           # Mẫu crontab
+│   ├── run_crawler.py              # Crawl engine
+│   ├── upload_prices.py            # Upload incremental lên Supabase
+│   ├── daily_full_analysis.py      # Phân tích 100 mã + AI
+│   ├── ai_upload.py                # Upload AI analysis lên Supabase
+│   ├── import_to_supabase.py       # Import tất cả JSON lên Supabase
 │   ├── run_analysis.py             # Phân tích AI
 │   ├── run_kronos_now.py           # Kronos trên 3-5 mã
-│   ├── run_kronos_all.py           # Kronos trên toàn bộ VN100
-│   └── import_to_supabase.py       # Import dữ liệu JSON lên Supabase
+│   └── run_kronos_all.py           # Kronos trên toàn bộ VN100
 │
 ├── supabase/
-│   ├── schema.sql                  # Full schema
-│   └── migrations/
+│   └── schema.sql                  # Full schema (7 tables)
 │
-├── logs/                           # 🆕 Log crawl tự động
-│   ├── crawl_YYYYMMDD.log          # Log tổng hợp
-│   ├── cron_daily_price.log        # Log cron daily
-│   ├── cron_kronos.log             # Log cron Kronos
-│   ├── weekly_financial.log        # Log crawl tài chính
+├── logs/                           # Log crawl tự động
+│   ├── crawl_YYYYMMDD.log
+│   ├── daily_price_YYYYMMDD.log
+│   ├── cron_daily_price.log
+│   ├── kronos_pred_YYYYMMDD.log
 │   └── ...
 │
-├── openclaw/                       # OpenClaw integration
+├── openclaw/                       # OpenClaw workflows
 │   └── workflows/
-│       ├── analyze_symbol.yaml     # Tra cứu mã CK qua Telegram
-│       └── daily_crawl.yaml        # ⚠️ Legacy — crawl giờ qua OS cron
+│       ├── daily_crawl.yaml        # Legacy (OS cron thay thế)
+│       ├── daily_full_analysis.yaml
+│       ├── daily_summary.yaml
+│       └── analyze_symbol.yaml
 │
-└── vercel-frontend/                # Next.js dashboard
+└── vercel-frontend/                # Next.js (aifia-wdpk.vercel.app)
+    ├── src/
+    │   └── app/
+    │       ├── page.tsx            # Dashboard A-Z
+    │       ├── company/[symbol]    # Trang chi tiết cổ phiếu
+    │       └── api/db/route.ts     # API proxy → Supabase
+    ├── package.json
+    └── next.config.js
 ```
 
 ---
@@ -294,24 +314,27 @@ aifia/
 |---|---|
 | Crawler | Python 3.12+, `vnstock` ^4.0, `pandas`, `numpy` |
 | Storage | Supabase (PostgreSQL + pgvector) + local JSON |
-| Prediction | Kronos (OHLCV foundation model, 24.7M params) |
+| Prediction | Kronos (OHLCV foundation model) |
 | AI Analysis | OpenAI / Anthropic API (optional) |
 | Scheduler | **OS cron** (độc lập, không phụ thuộc OpenClaw) |
-| Frontend | Next.js 14 + Tailwind + Recharts (Vercel) |
+| Frontend | Next.js + Tailwind + Recharts (Vercel) |
 | Bot | OpenClaw (Telegram tra cứu) |
 
 ---
 
 ## 📊 Supabase Schema
 
-6 tables chính:
+7 tables (live):
 
-- **`companies`** — Thông tin doanh nghiệp (symbol PK)
-- **`financial_reports`** — Báo cáo tài chính theo quý (composite PK: symbol + quarter + year + report_type)
-- **`price_history`** — Dữ liệu giá hàng ngày (composite PK: symbol + date)
-- **`macro_data`** — Dữ liệu vĩ mô (indicator + period)
-- **`analysis_results`** — Kết quả phân tích AI
-- **`kronos_predictions`** — Dự báo giá từ Kronos
+| Table | Mục đích | PK |
+|---|---|---|
+| **`companies`** | Thông tin doanh nghiệp | symbol |
+| **`financial_reports`** | BCTC theo quý (income/balance/cashflow/ratio) | symbol + quarter + year + report_type |
+| **`price_history`** | Giá OHLCV hàng ngày (~197K records) | symbol + date |
+| **`macro_data`** | Dữ liệu vĩ mô | indicator + period |
+| **`analysis_results`** | Kết quả phân tích AI | — |
+| **`kronos_predictions`** | Dự báo giá từ Kronos | — |
+| **`company_highlights`** | Điểm nổi bật doanh nghiệp | — |
 
 Xem chi tiết: [`supabase/schema.sql`](supabase/schema.sql)
 
@@ -330,11 +353,11 @@ SUPABASE_SERVICE_KEY=your_service_role_key
 
 ## 📈 Monitoring
 
-Cron log: `tail -f logs/cron_*.log`
-Crawl log: `tail -f logs/crawl_$(date +%Y%m%d).log`
-Crawl summary: `data/crawl_summary.json`
-
-Phát hiện lỗi qua exit code (cron sẽ gửi mail nếu configured) và log chi tiết từng task.
+```bash
+tail -f logs/cron_daily_price.log           # Cron crawl giá
+tail -f logs/crawl_$(date +%Y%m%d).log      # Log crawl tổng hợp
+cat data/crawl_summary.json                  # Tổng kết lần crawl gần nhất
+```
 
 ---
 

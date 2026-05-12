@@ -5,8 +5,8 @@
 ### Crawler & Data Pipeline
 - [x] Khảo sát dữ liệu: vnstock (OHLCV, BCTC, company info) + Kronos (price prediction)
 - [x] Xác định kiến trúc: Crawler → Supabase → Processing → Frontend
-- [x] Xây dựng Supabase schema (8 tables: companies, financial_reports, price_history, 
-      macro_data, analysis_results, kronos_predictions, company_highlights, ai_insights)
+- [x] Xây dựng Supabase schema (7 tables: companies, financial_reports, price_history, 
+      macro_data, analysis_results, kronos_predictions, company_highlights)
 - [x] Crawler vnstock_source: lấy danh sách VN100 + company info
 - [x] Crawler lấy báo cáo tài chính (income_statement, balance_sheet, cash_flow, ratio)
 - [x] Crawler lấy dữ liệu giá OHLCV (incremental, ~2018→nay)
