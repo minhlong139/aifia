@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState, useMemo } from 'react'
-import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis } from '@/lib/supabase'
+import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis, getCompanyHighlight } from '@/lib/supabase'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -68,6 +68,7 @@ export default function CompanyPage() {
   const [reports, setReports] = useState<any[]>([])
   const [kronos, setKronos] = useState<any>(null)
   const [analysis, setAnalysis] = useState<any>(null)
+  const [highlights, setHighlights] = useState<any>(null)
   const [allSymbols, setAllSymbols] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<'pl' | 'balance' | 'cf'>('pl')
 
@@ -81,7 +82,8 @@ export default function CompanyPage() {
       getKronosPrediction(curSymbol).catch(() => null),
       getCompanies(100).catch(() => [] as any[]),
       getAnalysis(curSymbol).catch(() => null),
-    ]).then(([c, r, k, companies, a]) => {
+      getCompanyHighlight(curSymbol).catch(() => null),
+    ]).then(([c, r, k, companies, a, h]) => {
       setCompany(c)
       setReports(r)
       setKronos(k)
@@ -93,6 +95,7 @@ export default function CompanyPage() {
         } catch { a.result = {} }
       }
       setAnalysis(a)
+      setHighlights(h)
       setLoading(false)
     })
   }, [curSymbol])
@@ -195,10 +198,8 @@ export default function CompanyPage() {
       ? Math.round(np / revenue * 1000) / 10
       : null
 
-    // Price from kronos (current_price in thousand VND → convert to display)
-    const price = kronos?.metrics?.current_price
-      ? Math.round(kronos.metrics.current_price / 10) / 100
-      : null
+    // Price: use highlights first (consistent with listing), then kronos at fallback
+    const price = highlights?.current_price ?? kronos?.metrics?.current_price
 
     return {
       revenue_t: revenue != null ? Math.round(revenue / 1_000_000 * 100) / 100 : null,
@@ -209,7 +210,7 @@ export default function CompanyPage() {
       pb: pb != null ? Math.round(pb * 100) / 100 : null,
       price,
     }
-  }, [incomeReports, roe, pe, pb, kronos])
+  }, [incomeReports, roe, pe, pb, kronos, highlights])
 
   if (loading) return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -296,7 +297,7 @@ export default function CompanyPage() {
 
               {/* Key Metrics Grid */}
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                {/* ── Real metrics from actual financial data (not AI-generated) ── */}
+                {/* ── Metrics from real financial data (consistent with listing) ── */}
                 {(realMetrics.revenue_t) && <Metric label="Doanh thu (Q)" value={`${realMetrics.revenue_t} tỷ`} />}
                 {realMetrics.revenue_growth_qoq !== undefined && realMetrics.revenue_growth_qoq !== null &&
                   <Metric label="Tăng trưởng DT" value={`${realMetrics.revenue_growth_qoq > 0 ? '+' : ''}${realMetrics.revenue_growth_qoq}%`}
@@ -305,11 +306,14 @@ export default function CompanyPage() {
                 {realMetrics.roe !== undefined && realMetrics.roe !== null &&
                   <Metric label="ROE" value={`${realMetrics.roe}%`}
                     color={realMetrics.roe > 20 ? 'text-green-600' : realMetrics.roe < 10 ? 'text-red-600' : ''} />}
-                {realMetrics.pe !== undefined && realMetrics.pe !== null &&
-                  <Metric label="P/E" value={`${realMetrics.pe}x`}
-                    color={realMetrics.pe < 12 ? 'text-green-600' : realMetrics.pe > 25 ? 'text-yellow-600' : ''} />}
-                {realMetrics.pb !== undefined && realMetrics.pb !== null && <Metric label="P/B" value={`${realMetrics.pb}x`} />}
-                {kronos?.metrics?.current_price && <Metric label="Giá" value={fmtVND(kronos.metrics.current_price)} />}
+                {highlights?.pe_ratio != null &&
+                  <Metric label="P/E" value={`${(+highlights.pe_ratio).toFixed(1)}x`}
+                    color={highlights.pe_ratio < 12 ? 'text-green-600' : highlights.pe_ratio > 25 ? 'text-yellow-600' : ''} />}
+                {highlights?.pb_ratio != null && <Metric label="P/B" value={`${(+highlights.pb_ratio).toFixed(1)}x`} />}
+                {realMetrics.price != null && <Metric label="Giá" value={FMT.format(Math.round(+(realMetrics.price) * 1000)) + ' ₫'} />}
+                {highlights?.price_change_1m != null &&
+                  <Metric label="1 tháng" value={`${highlights.price_change_1m > 0 ? '+' : ''}${(+highlights.price_change_1m).toFixed(1)}%`}
+                    color={highlights.price_change_1m > 0 ? 'text-green-600' : 'text-red-600'} />}
               </div>
 
               {/* AI Commentary */}

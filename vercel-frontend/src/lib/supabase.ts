@@ -42,6 +42,10 @@ export async function getCompanyHighlights() {
   return call('getCompanyHighlights')
 }
 
+export async function getCompanyHighlight(symbol: string) {
+  return call('getCompanyHighlights', { symbol })
+}
+
 export async function getDataCoverage() {
   return call('getDataCoverage')
 }

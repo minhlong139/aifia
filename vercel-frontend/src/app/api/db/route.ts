@@ -83,6 +83,15 @@ export async function POST(req: NextRequest) {
       }
 
       case 'getCompanyHighlights': {
+        const { symbol } = params || {}
+        if (symbol) {
+          const { data } = await supabase
+            .from('company_highlights')
+            .select('*')
+            .eq('symbol', symbol.toUpperCase())
+            .maybeSingle()
+          return NextResponse.json(data ?? null)
+        }
         const { data } = await supabase
           .from('company_highlights')
           .select('*')
