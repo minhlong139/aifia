@@ -183,6 +183,49 @@ export default function CompanyPage() {
   const eps = pick(rdQ, 'trailing_eps'), pe = pick(rdQ, 'p_e'), pb = pick(rdQ, 'p_b')
   const bvps = pick(rdQ, 'book_value_per_share_bvps'), roe = pick(rdQ, 'roe_trailling'), roa = pick(rdQ, 'roa_trailling')
 
+  // Compute metrics from real financial data (not AI-generated anMetrics)
+  const realMetrics = useMemo(() => {
+    const sortedInc = [...incomeReports].sort((a, b) => b.year - a.year || b.quarter - a.quarter)
+    const cur = sortedInc[0]
+    const prev = sortedInc[1]
+    if (!cur) return {}
+
+    const curData = cur.report_data || {}
+    const prevData = prev?.report_data || {}
+
+    // Revenue: data is in thousand VND → divide by 1,000,000 to get tỷ
+    const revenue = pick(curData, ...PL_FIELDS[0].keys)
+    const prevRevenue = pick(prevData, ...PL_FIELDS[0].keys)
+
+    // Net profit (NP)
+    const np = pick(curData, ...PL_FIELDS[4].keys)
+
+    // Revenue growth QoQ (%)
+    const growth = (revenue != null && prevRevenue != null && prevRevenue > 0)
+      ? Math.round((revenue - prevRevenue) / prevRevenue * 1000) / 10
+      : null
+
+    // Net margin (%)
+    const netMargin = (revenue != null && revenue > 0 && np != null)
+      ? Math.round(np / revenue * 1000) / 10
+      : null
+
+    // Price from kronos (current_price in thousand VND → convert to display)
+    const price = kronos?.metrics?.current_price
+      ? Math.round(kronos.metrics.current_price / 10) / 100
+      : null
+
+    return {
+      revenue_t: revenue != null ? Math.round(revenue / 1_000_000 * 100) / 100 : null,
+      revenue_growth_qoq: growth,
+      net_margin: netMargin,
+      roe: roe != null ? Math.round(roe * 10) / 10 : null,
+      pe: pe != null ? Math.round(pe * 100) / 100 : null,
+      pb: pb != null ? Math.round(pb * 100) / 100 : null,
+      price,
+    }
+  }, [incomeReports, roe, pe, pb, kronos])
+
   return (
     <main className="min-h-screen bg-gray-50">
       {/* ── Header with prev/next ── */}
@@ -252,25 +295,20 @@ export default function CompanyPage() {
 
               {/* Key Metrics Grid */}
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                {anMetrics.revenue_t && <Metric label="Doanh thu (Q)" value={`${anMetrics.revenue_t} tỷ`} />}
-                {anMetrics.revenue_growth_qoq !== undefined && anMetrics.revenue_growth_qoq !== null &&
-                  <Metric label="Tăng trưởng DT" value={`${anMetrics.revenue_growth_qoq > 0 ? '+' : ''}${anMetrics.revenue_growth_qoq}%`}
-                    color={anMetrics.revenue_growth_qoq > 10 ? 'text-green-600' : anMetrics.revenue_growth_qoq < 0 ? 'text-red-600' : ''} />}
-                {anMetrics.net_margin && <Metric label="Biên LNST" value={`${anMetrics.net_margin}%`} />}
-                {anMetrics.roe !== undefined && anMetrics.roe !== null &&
-                  <Metric label="ROE" value={`${anMetrics.roe}%`}
-                    color={anMetrics.roe > 20 ? 'text-green-600' : anMetrics.roe < 10 ? 'text-red-600' : ''} />}
-                {anMetrics.pe !== undefined && anMetrics.pe !== null &&
-                  <Metric label="P/E" value={`${anMetrics.pe}x`}
-                    color={anMetrics.pe < 12 ? 'text-green-600' : anMetrics.pe > 25 ? 'text-yellow-600' : ''} />}
-                {anMetrics.pb !== undefined && anMetrics.pb !== null && <Metric label="P/B" value={`${anMetrics.pb}x`} />}
-                {anMetrics.de_ratio !== undefined && anMetrics.de_ratio !== null &&
-                  <Metric label="D/E" value={`${anMetrics.de_ratio}%`}
-                    color={anMetrics.de_ratio > 100 ? 'text-red-600' : anMetrics.de_ratio < 50 ? 'text-green-600' : ''} />}
-                {anMetrics.price && <Metric label="Giá" value={anMetrics.price.toLocaleString('vi-VN') + 'k'} />}
-                {anMetrics.price_change_1m !== undefined && anMetrics.price_change_1m !== null &&
-                  <Metric label="1 tháng" value={`${anMetrics.price_change_1m > 0 ? '+' : ''}${anMetrics.price_change_1m}%`}
-                    color={anMetrics.price_change_1m > 0 ? 'text-green-600' : 'text-red-600'} />}
+                {/* ── Real metrics from actual financial data (not AI-generated) ── */}
+                {(realMetrics.revenue_t) && <Metric label="Doanh thu (Q)" value={`${realMetrics.revenue_t} tỷ`} />}
+                {realMetrics.revenue_growth_qoq !== undefined && realMetrics.revenue_growth_qoq !== null &&
+                  <Metric label="Tăng trưởng DT" value={`${realMetrics.revenue_growth_qoq > 0 ? '+' : ''}${realMetrics.revenue_growth_qoq}%`}
+                    color={realMetrics.revenue_growth_qoq > 10 ? 'text-green-600' : realMetrics.revenue_growth_qoq < 0 ? 'text-red-600' : ''} />}
+                {realMetrics.net_margin && <Metric label="Biên LNST" value={`${realMetrics.net_margin}%`} />}
+                {realMetrics.roe !== undefined && realMetrics.roe !== null &&
+                  <Metric label="ROE" value={`${realMetrics.roe}%`}
+                    color={realMetrics.roe > 20 ? 'text-green-600' : realMetrics.roe < 10 ? 'text-red-600' : ''} />}
+                {realMetrics.pe !== undefined && realMetrics.pe !== null &&
+                  <Metric label="P/E" value={`${realMetrics.pe}x`}
+                    color={realMetrics.pe < 12 ? 'text-green-600' : realMetrics.pe > 25 ? 'text-yellow-600' : ''} />}
+                {realMetrics.pb !== undefined && realMetrics.pb !== null && <Metric label="P/B" value={`${realMetrics.pb}x`} />}
+                {kronos?.metrics?.current_price && <Metric label="Giá" value={fmtVND(kronos.metrics.current_price)} />}
               </div>
 
               {/* AI Commentary */}
