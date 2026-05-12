@@ -231,30 +231,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // --- 2d: Valuation (PE/PB low) ---
-  else if (CHEAP_WORDS.some(w => lowerMsg.includes(w)) || EXPENSIVE_WORDS.some(w => lowerMsg.includes(w))) {
-    const isExpensive = EXPENSIVE_WORDS.some(w => lowerMsg.includes(w))
-    const hasPE = lowerMsg.includes('pe') || lowerMsg.includes('p/e')
-    const hasPB = lowerMsg.includes('pb') || lowerMsg.includes('p/b')
-
-    for (const c of companies) {
-      const h = highlightsMap.get(c.symbol)
-      if (!h) continue
-      if (hasPE && h.pe_ratio !== null && h.pe_ratio > 0) {
-        if (isExpensive && h.pe_ratio > 20) matchedCompanies.push(c)
-        else if (!isExpensive && h.pe_ratio < 12) matchedCompanies.push(c)
-      } else if (hasPB && h.pb_ratio !== null && h.pb_ratio > 0) {
-        if (isExpensive && h.pb_ratio > 3) matchedCompanies.push(c)
-        else if (!isExpensive && h.pb_ratio < 1) matchedCompanies.push(c)
-      }
-    }
-
-    const suffix = isExpensive ? 'cao' : 'thấp'
-    answer = `💵 **${matchedCompanies.length} mã có định giá ${suffix}**`
-    intentLabel = 'valuation'
-  }
-
-  // --- 2e: Top rated / Strongest ---
+  // --- 2d: Top rated / Strongest (check BEFORE valuation to avoid 'cao' ambiguity) ---
   else if (TOP_WORDS.some(w => lowerMsg.includes(w)) || RECOMMEND_WORDS.some(w => lowerMsg.includes(w))) {
     // Sort by AI rating
     const withRating = companies
@@ -265,6 +242,47 @@ export async function POST(req: NextRequest) {
     matchedCompanies = withRating.map(x => x.company)
     answer = `🏆 **Top ${matchedCompanies.length} mã có AIFIA Rating cao nhất**`
     intentLabel = 'top_rated'
+  }
+
+  // --- 2e: Valuation (PE/PB) ---
+  // Only match if PE/PB is explicitly mentioned, OR if "định giá" is in the query
+  else if (CHEAP_WORDS.some(w => lowerMsg.includes(w)) ||
+           EXPENSIVE_WORDS.some(w => lowerMsg.includes(w)) ||
+           lowerMsg.includes('định giá') ||
+           lowerMsg.includes('valuation')) {
+    const isExpensive = EXPENSIVE_WORDS.some(w => lowerMsg.includes(w)) || lowerMsg.includes('cao')
+    const hasPE = lowerMsg.includes('pe') || lowerMsg.includes('p/e')
+    const hasPB = lowerMsg.includes('pb') || lowerMsg.includes('p/b')
+
+    // Default to check PE when neither PE nor PB is explicitly mentioned
+    const checkPE = hasPE || (!hasPE && !hasPB)
+    const checkPB = hasPB || (!hasPE && !hasPB && !checkPE)
+
+    for (const c of companies) {
+      const h = highlightsMap.get(c.symbol)
+      if (!h) continue
+
+      if (checkPE && h.pe_ratio !== null && h.pe_ratio > 0) {
+        if (isExpensive && h.pe_ratio > 20) matchedCompanies.push(c)
+        else if (!isExpensive && h.pe_ratio < 12) matchedCompanies.push(c)
+      } else if (checkPB && h.pb_ratio !== null && h.pb_ratio > 0) {
+        if (isExpensive && h.pb_ratio > 3) matchedCompanies.push(c)
+        else if (!isExpensive && h.pb_ratio < 1) matchedCompanies.push(c)
+      }
+    }
+
+    const suffix = isExpensive ? 'cao' : 'thấp'
+    answer = `💵 **${matchedCompanies.length} mã có định giá ${suffix}**`
+    intentLabel = 'valuation'
+
+    // Fallback: if valuation found nothing but data exists, show a helpful message
+    if (matchedCompanies.length === 0 && companies.length > 0) {
+      const withPE = companies.filter(c => {
+        const h = highlightsMap.get(c.symbol)
+        return h !== undefined && h.pe_ratio !== null && h.pe_ratio > 0
+      })
+      answer = `💵 **0 mã có định giá ${suffix}** (${withPE.length} mã có dữ liệu P/E)`
+    }
   }
 
   // --- 2f: All / list all ---
