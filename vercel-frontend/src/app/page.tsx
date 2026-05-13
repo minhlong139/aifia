@@ -43,13 +43,15 @@ export default function HomePage() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Group all companies alphabetically (only used when chat is inactive)
+  // Group by industry (A-Z), within each group sort by symbol (A-Z)
   const grouped = useMemo(() => {
     const map = new Map<string, Company[]>()
-    for (const c of companies) {
-      const letter = c.symbol[0]?.toUpperCase() || '#'
-      if (!map.has(letter)) map.set(letter, [])
-      map.get(letter)!.push(c)
+    // Sort companies by symbol first for within-group order
+    const sorted = [...companies].sort((a, b) => a.symbol.localeCompare(b.symbol))
+    for (const c of sorted) {
+      const industry = c.industry?.trim() || 'Khác'
+      if (!map.has(industry)) map.set(industry, [])
+      map.get(industry)!.push(c)
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [companies])
@@ -98,10 +100,10 @@ export default function HomePage() {
             <div className="text-sm text-gray-400 mb-3">
               Tổng số {companies.length} mã — {dataCount} có BCTC
             </div>
-            {grouped.map(([letter, items]) => (
-              <section key={letter} className="mb-5">
+            {grouped.map(([industry, items]) => (
+              <section key={industry} className="mb-5">
                 <h2 className="text-lg font-bold text-gray-700 mb-2 sticky top-[104px] bg-gray-50 py-1">
-                  {letter}
+                  {industry} <span className="text-sm font-normal text-gray-400">({items.length})</span>
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                   {items.map((c) => {
@@ -120,7 +122,6 @@ export default function HomePage() {
                         }`}
                       >
                         <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${hasData ? 'bg-green-400' : 'bg-gray-300'}`} />
                           <span className="font-bold text-sm text-blue-700">{c.symbol}</span>
                           {kronos && kronos.signal && kronos.signal !== 'NEUTRAL' && (
                             <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${
@@ -130,8 +131,8 @@ export default function HomePage() {
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-500 truncate pl-4">{c.industry || '—'}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5 pl-4">{c.exchange || ''}</div>
+                        <div className="text-xs text-gray-500 truncate">{c.industry || '—'}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{c.exchange || ''}</div>
                       </button>
                     )
                   })}
