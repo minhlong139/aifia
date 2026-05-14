@@ -12,23 +12,51 @@ interface Company {
   exchange: string | null
 }
 
+interface ChatCompany extends Company {
+  kronosSignal: string | null
+  aiRating: number | null
+  peRatio: number | null
+  priceChange: number | null
+}
+
+interface ChatResult {
+  answer: string
+  companies: ChatCompany[]
+}
+
 type CoverageMap = Record<string, { financial: boolean; price: boolean; kronos: any | null }>
+
+function signalIcon(signal: string | null): { icon: string; color: string; bg: string } | null {
+  if (!signal) return null
+  const map: Record<string, { icon: string; color: string; bg: string }> = {
+    STRONG_BUY: { icon: '🔥', color: 'text-green-700', bg: 'bg-green-100' },
+    BUY: { icon: '⚡', color: 'text-green-600', bg: 'bg-green-50' },
+    NEUTRAL: { icon: '➖', color: 'text-yellow-700', bg: 'bg-yellow-50' },
+    SELL: { icon: '⚠️', color: 'text-red-600', bg: 'bg-red-50' },
+    STRONG_SELL: { icon: '💀', color: 'text-red-700', bg: 'bg-red-100' },
+  }
+  return map[signal] || null
+}
+
+function ratingColor(rating: number | null): string {
+  if (rating === null) return ''
+  if (rating >= 75) return 'text-green-600'
+  if (rating >= 60) return 'text-blue-600'
+  if (rating >= 45) return 'text-yellow-600'
+  return 'text-red-600'
+}
+
+function priceChangeColor(pct: number | null): string {
+  if (pct === null) return ''
+  return pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : ''
+}
 
 export default function HomePage() {
   const router = useRouter()
   const [companies, setCompanies] = useState<Company[]>([])
   const [coverage, setCoverage] = useState<CoverageMap>({})
   const [loading, setLoading] = useState(true)
-  const [chatResults, setChatResults] = useState<Array<{
-    symbol: string
-    name: string | null
-    industry: string | null
-    exchange: string | null
-    kronosSignal: string | null
-    aiRating: number | null
-    peRatio: number | null
-    priceChange: number | null
-  }> | null>(null)
+  const [chatResult, setChatResult] = useState<ChatResult | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -61,8 +89,8 @@ export default function HomePage() {
     [companies, coverage]
   )
 
-  const handleResultsChange = useCallback((results: any[] | null) => {
-    setChatResults(results)
+  const handleResultsChange = useCallback((results: ChatResult | null) => {
+    setChatResult(results)
   }, [])
 
   return (
@@ -87,9 +115,67 @@ export default function HomePage() {
             <div className="text-4xl mb-3 animate-pulse">⏳</div>
             <p>Đang tải danh sách cổ phiếu…</p>
           </div>
-        ) : chatResults !== null ? (
-          /* Chat is active — main list hidden, results shown in fixed-height area above */
-          null
+        ) : chatResult !== null ? (
+          <section>
+            <div className="mb-4 rounded-xl border border-blue-100 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-500">
+                Phân tích từ AIFIA
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
+                {chatResult.answer}
+              </div>
+            </div>
+            {chatResult.companies.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <div className="text-4xl mb-3">🔍</div>
+                <p>Không tìm thấy kết quả phù hợp</p>
+              </div>
+            ) : (
+              <>
+                <div className="text-sm text-gray-400 mb-3">
+                  {chatResult.companies.length} mã — Click vào mã để xem chi tiết
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                  {chatResult.companies.map(c => {
+                    const sig = signalIcon(c.kronosSignal)
+                    return (
+                      <button
+                        key={c.symbol}
+                        onClick={() => router.push(`/company/${c.symbol}`)}
+                        onMouseEnter={() => router.prefetch(`/company/${c.symbol}`)}
+                        className="text-left bg-white rounded-xl px-3 py-2.5 shadow-sm border border-gray-200 transition-all hover:shadow-md hover:border-blue-400 active:scale-[0.98]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-blue-700">{c.symbol}</span>
+                          {sig && (
+                            <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${sig.bg} ${sig.color}`}>
+                              {sig.icon}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">{c.industry || '—'}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {c.aiRating !== null && (
+                            <span className={`text-[10px] font-semibold ${ratingColor(c.aiRating)}`}>
+                              ⭐{Math.round(c.aiRating)}
+                            </span>
+                          )}
+                          {c.peRatio !== null && (
+                            <span className="text-[10px] text-gray-400">P/E {c.peRatio.toFixed(1)}</span>
+                          )}
+                          {c.priceChange !== null && (
+                            <span className={`text-[10px] font-medium ${priceChangeColor(c.priceChange)}`}>
+                              {c.priceChange > 0 ? '+' : ''}{c.priceChange.toFixed(1)}%
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </section>
         ) : grouped.length === 0 ? (
           <div className="text-center py-20 text-gray-400">
             <div className="text-4xl mb-3">🔍</div>

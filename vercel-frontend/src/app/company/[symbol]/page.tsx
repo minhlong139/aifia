@@ -1,8 +1,9 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis, getCompanyHighlight } from '@/lib/supabase'
+import ChatBot from '@/components/ChatBot'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -58,6 +59,22 @@ function scoreText(s: number): string {
 }
 
 // ── Component ────────────────────────────────────────
+interface ChatCompany {
+  symbol: string
+  name: string | null
+  industry: string | null
+  exchange: string | null
+  kronosSignal: string | null
+  aiRating: number | null
+  peRatio: number | null
+  priceChange: number | null
+}
+
+interface ChatResult {
+  answer: string
+  companies: ChatCompany[]
+}
+
 export default function CompanyPage() {
   const router = useRouter()
   const params = useParams()
@@ -71,6 +88,7 @@ export default function CompanyPage() {
   const [highlights, setHighlights] = useState<any>(null)
   const [allSymbols, setAllSymbols] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<'pl' | 'balance' | 'cf'>('pl')
+  const [chatResult, setChatResult] = useState<ChatResult | null>(null)
 
   // Fetch all data
   useEffect(() => {
@@ -212,6 +230,10 @@ export default function CompanyPage() {
     }
   }, [incomeReports, roe, pe, pb, kronos, highlights])
 
+  const handleChatResultsChange = useCallback((results: ChatResult | null) => {
+    setChatResult(results)
+  }, [])
+
   if (loading) return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center"><div className="text-4xl mb-3 animate-pulse">⏳</div><p>Đang tải dữ liệu {curSymbol}…</p></div>
@@ -251,11 +273,36 @@ export default function CompanyPage() {
           </div>
         </div>
       </header>
+      <ChatBot onResultsChange={handleChatResultsChange} />
 
       <div className="max-w-7xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* ════ LEFT / MAIN ════ */}
         <div className="lg:col-span-2 space-y-4">
+          {chatResult && (
+            <section className="rounded-xl border border-blue-100 bg-white p-4 shadow-sm">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-500">
+                Phân tích từ AIFIA
+              </div>
+              <div className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
+                {chatResult.answer}
+              </div>
+              {chatResult.companies.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {chatResult.companies.slice(0, 12).map(item => (
+                    <button
+                      key={item.symbol}
+                      onClick={() => router.push(`/company/${item.symbol}`)}
+                      className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-left text-xs hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      <span className="font-bold text-blue-700">{item.symbol}</span>
+                      <span className="ml-1 text-gray-500">{item.industry || ''}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* ── Company Info ── */}
           <div className="bg-white rounded-xl p-5 shadow-sm border">

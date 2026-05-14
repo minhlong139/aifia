@@ -1,6 +1,5 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState, useRef, useEffect, useCallback } from 'react'
 
 // ── Types ──────────────────────────────────────────────
@@ -24,33 +23,7 @@ interface ChatState {
 
 // ── Props ──────────────────────────────────────────────
 interface ChatBotProps {
-  onResultsChange?: (results: ChatCompany[] | null) => void
-}
-
-// ── Kronos signal helper ──────────────────────────────
-function signalIcon(signal: string | null): { icon: string; color: string; bg: string; text: string } | null {
-  if (!signal) return null
-  const map: Record<string, { icon: string; color: string; bg: string; text: string }> = {
-    STRONG_BUY:    { icon: '🔥', color: 'text-green-700', bg: 'bg-green-100', text: 'MUA MẠNH' },
-    BUY:           { icon: '⚡', color: 'text-green-600', bg: 'bg-green-50', text: 'MUA' },
-    NEUTRAL:       { icon: '➖', color: 'text-yellow-700', bg: 'bg-yellow-50', text: 'TRUNG LẬP' },
-    SELL:          { icon: '⚠️', color: 'text-red-600', bg: 'bg-red-50', text: 'BÁN' },
-    STRONG_SELL:   { icon: '💀', color: 'text-red-700', bg: 'bg-red-100', text: 'BÁN MẠNH' },
-  }
-  return map[signal] || null
-}
-
-function ratingColor(rating: number | null): string {
-  if (rating === null) return ''
-  if (rating >= 75) return 'text-green-600'
-  if (rating >= 60) return 'text-blue-600'
-  if (rating >= 45) return 'text-yellow-600'
-  return 'text-red-600'
-}
-
-function priceChangeColor(pct: number | null): string {
-  if (pct === null) return ''
-  return pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : ''
+  onResultsChange?: (results: { answer: string; companies: ChatCompany[] } | null) => void
 }
 
 // ── Dynamic suggestion pools ──────────────────────────
@@ -180,7 +153,6 @@ function detectPool(query: string): string[] {
 }
 
 export default function ChatBot({ onResultsChange }: ChatBotProps) {
-  const router = useRouter()
   const [input, setInput] = useState('')
   const [state, setState] = useState<ChatState>({
     messages: [],
@@ -191,7 +163,6 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
   const [suggestionsExpanded, setSuggestionsExpanded] = useState(true)
   const [suggestionCycle, setSuggestionCycle] = useState(0)
   const [suggestions, setSuggestions] = useState(() => pickSuggestions(SUGGESTION_POOLS.default, 0))
-  const resultsRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const lastQueryRef = useRef('')
   const headerRef = useRef<HTMLDivElement>(null)
@@ -209,11 +180,6 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // Notify parent of results changes
-  useEffect(() => {
-    onResultsChange?.(state.hasQueried ? state.companies : null)
-  }, [state.companies, state.hasQueried, onResultsChange])
-
   const handleSubmit = useCallback(async (query: string) => {
     const q = query.trim()
     if (!q || state.loading) return
@@ -229,11 +195,15 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
       hasQueried: true,
     }))
 
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 45000)
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: q }),
+        body: JSON.stringify({ message: q, currentPath: window.location.pathname }),
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
@@ -244,25 +214,27 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
         loading: false,
         hasQueried: true,
       }))
+      onResultsChange?.({ answer: data.answer, companies: data.companies || [] })
 
       // Rotate suggestions based on the query topic
       const pool = detectPool(q)
-      setSuggestionCycle(prev => {
-        const next = prev + 1
-        setSuggestions(pickSuggestions(pool, next))
-        return next
-      })
+      const nextCycle = suggestionCycle + 1
+      setSuggestionCycle(nextCycle)
+      setSuggestions(pickSuggestions(pool, nextCycle))
     } catch {
+      const errorText = 'Lỗi kết nối hoặc AI phản hồi quá lâu, vui lòng thử lại.'
       setState(prev => ({
         ...prev,
-        messages: [...prev.messages, { role: 'assistant', text: '❌ Lỗi kết nối, vui lòng thử lại.' }],
+        messages: [...prev.messages, { role: 'assistant', text: errorText }],
         loading: false,
         hasQueried: true,
       }))
+      onResultsChange?.({ answer: errorText, companies: [] })
+    } finally {
+      window.clearTimeout(timeoutId)
+      setInput('')
     }
-
-    setInput('')
-  }, [state.loading])
+  }, [state.loading, onResultsChange, suggestionCycle])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit(input)
@@ -270,6 +242,7 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
 
   const clearChat = () => {
     setState({ messages: [], companies: [], loading: false, hasQueried: false })
+    onResultsChange?.(null)
     lastQueryRef.current = ''
     setInput('')
     inputRef.current?.focus()
@@ -324,42 +297,41 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
           </button>
         </div>
 
-        {/* Suggestions — collapsible, auto-hide on scroll */}
-        {!state.hasQueried && (
-          <div className="mt-2">
-            <div
-              className={`flex flex-wrap gap-1.5 overflow-hidden transition-all duration-200 ${
-                suggestionsExpanded ? 'max-h-[80px]' : 'max-h-0'
-              }`}
-            >
-              {suggestions.map((s, i) => (
-                <button
-                  key={`${suggestionCycle}-${i}`}
-                  onClick={() => handleSubmit(s)}
-                  className="text-xs px-2.5 py-1.5 bg-gray-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg text-gray-500 transition-colors whitespace-nowrap"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            {!suggestionsExpanded && (
+        {/* Suggestions — refresh after every question to keep the chat exploratory */}
+        <div className="mt-2">
+          <div
+            className={`flex flex-wrap gap-1.5 overflow-hidden transition-all duration-200 ${
+              suggestionsExpanded ? 'max-h-[80px]' : 'max-h-0'
+            }`}
+          >
+            {suggestions.map((s, i) => (
               <button
-                onClick={() => setSuggestionsExpanded(true)}
-                className="text-xs text-blue-500 hover:text-blue-700 mt-1 transition-colors"
+                key={`${suggestionCycle}-${i}-${s}`}
+                onClick={() => handleSubmit(s)}
+                disabled={state.loading}
+                className="text-xs px-2.5 py-1.5 bg-gray-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg text-gray-500 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                📋 Xem gợi ý
+                {s}
               </button>
-            )}
+            ))}
           </div>
-        )}
+          {!suggestionsExpanded && (
+            <button
+              onClick={() => setSuggestionsExpanded(true)}
+              className="text-xs text-blue-500 hover:text-blue-700 mt-1 transition-colors"
+            >
+              📋 Xem gợi ý mới
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Results area — fixed height prevents layout jumping */}
+      {/* Answer area. Result cards are rendered by the page body, outside the sticky header. */}
       {state.hasQueried && (
         <div className="max-w-7xl mx-auto px-4 pb-3">
           {/* Chat answer */}
           <div className="mb-3">
-            {state.messages.slice(-2).map((msg, i) => (
+            {state.messages.filter(msg => msg.role === 'user').slice(-1).map((msg, i) => (
               <div
                 key={i}
                 className={`text-sm mb-1 ${
@@ -368,16 +340,9 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
                     : 'text-gray-800 font-medium'
                 }`}
               >
-                {msg.role === 'user' ? (
-                  <span className="inline-block bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl text-xs">
-                    {msg.text}
-                  </span>
-                ) : (
-                  <div className="flex items-start gap-2">
-                    <span className="text-blue-500 mt-0.5">🤖</span>
-                    <span className="whitespace-pre-wrap text-sm">{msg.text}</span>
-                  </div>
-                )}
+                <span className="inline-block bg-blue-50 text-blue-700 px-3 py-1.5 rounded-xl text-xs">
+                  {msg.text}
+                </span>
               </div>
             ))}
             {state.loading && (
@@ -388,64 +353,6 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
             )}
           </div>
 
-          {/* Company results grid — fixed height with overflow scroll */}
-          <div
-            ref={resultsRef}
-            className="overflow-y-auto rounded-xl border border-gray-100 bg-gray-50/50"
-            style={{ maxHeight: '420px', minHeight: '120px' }}
-          >
-            {state.companies.length === 0 && !state.loading ? (
-              <div className="flex items-center justify-center h-[120px] text-gray-400 text-sm">
-                Không tìm thấy kết quả phù hợp
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 p-3">
-                {state.companies.map(c => {
-                  const sig = signalIcon(c.kronosSignal)
-                  return (
-                    <button
-                      key={c.symbol}
-                      onClick={() => router.push(`/company/${c.symbol}`)}
-                      onMouseEnter={() => router.prefetch(`/company/${c.symbol}`)}
-                      className="text-left bg-white rounded-xl px-3 py-2.5 shadow-sm border border-gray-200 transition-all hover:shadow-md hover:border-blue-400 active:scale-[0.98]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-sm text-blue-700">{c.symbol}</span>
-                        {sig && (
-                          <span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded ${sig.bg} ${sig.color}`}>
-                            {sig.icon}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-500 truncate">{c.industry || '—'}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {c.aiRating !== null && (
-                          <span className={`text-[10px] font-semibold ${ratingColor(c.aiRating)}`}>
-                            ⭐{Math.round(c.aiRating)}
-                          </span>
-                        )}
-                        {c.peRatio !== null && (
-                          <span className="text-[10px] text-gray-400">P/E {c.peRatio.toFixed(1)}</span>
-                        )}
-                        {c.priceChange !== null && (
-                          <span className={`text-[10px] font-medium ${priceChangeColor(c.priceChange)}`}>
-                            {c.priceChange > 0 ? '+' : ''}{c.priceChange.toFixed(1)}%
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Result count */}
-          {!state.loading && state.companies.length > 0 && (
-            <div className="text-xs text-gray-400 mt-2 text-center">
-              {state.companies.length} mã — Click vào mã để xem chi tiết
-            </div>
-          )}
         </div>
       )}
     </div>

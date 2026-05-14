@@ -3,122 +3,419 @@ import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
 
-// ── Types ──────────────────────────────────────────────
 interface Company {
   symbol: string
   name: string | null
   industry: string | null
   exchange: string | null
   market_cap: number | null
+  profile_text?: string | null
 }
 
 interface HighlightRow {
   symbol: string
-  ai_rating: number | null
-  pe_ratio: number | null
-  pb_ratio: number | null
-  roe: number | null
   current_price: number | null
   price_change_1m: number | null
+  price_change_3m: number | null
+  price_change_1y: number | null
+  pe_ratio: number | null
+  pb_ratio: number | null
+  eps: number | null
+  roe: number | null
+  roa: number | null
+  dividend_yield: number | null
+  market_cap: number | null
+  ai_rating: number | null
+  ai_summary: string | null
+  anomalies: string[] | null
 }
 
 interface KronosRow {
   symbol: string
-  metrics: {
-    signal?: string
-    current_price?: number
-    predicted_price?: number
-    change_pct?: number
-    upside_prob?: number
-    volatility?: number
-  } | null
+  prediction_date: string | null
+  metrics: Record<string, unknown> | null
+  predicted_ohlcv: unknown
 }
 
-interface ChatResponse {
-  answer: string
-  companies: Array<{
-    symbol: string
-    name: string | null
-    industry: string | null
-    exchange: string | null
-    kronosSignal: string | null
-    aiRating: number | null
-    peRatio: number | null
-    priceChange: number | null
-  }>
-  resultsCount: number
+interface FinancialReport {
+  symbol: string
+  quarter: number
+  year: number
+  report_type: string
+  report_data: Record<string, unknown>
+  raw_text: string | null
 }
 
-// ── Vietnamese keyword sets ─────────────────────────────
-const BUY_WORDS = ['mua', 'buy', 'tăng', 'lên', 'uptrend', 'tích cực', 'nên mua', 'mua vào', 'strong buy']
-const SELL_WORDS = ['bán', 'sell', 'giảm', 'xuống', 'downtrend', 'tiêu cực', 'nên bán', 'bán ra', 'strong sell']
-const KRONOS_WORDS = ['kronos', 'dự báo', 'dự đoán', 'tín hiệu', 'signal', 'k']
-const INDUSTRY_WORDS = ['ngành', 'industry', 'lĩnh vực', 'nhóm']
-const CHEAP_WORDS = ['rẻ', 'thấp', 'cheap', 'định giá thấp', 'pe thấp', 'pb thấp']
-const EXPENSIVE_WORDS = ['đắt', 'cao', 'expensive', 'pe cao', 'pb cao']
-const TOP_WORDS = ['top', 'mạnh', 'nhất', 'best', 'tốt', 'điểm cao', 'rating', 'xếp hạng']
-const RECOMMEND_WORDS = ['khuyến nghị', 'recommend', 'nên', 'gợi ý']
+interface PriceRow {
+  symbol: string
+  date: string
+  close: number | null
+  volume: number | null
+}
 
-// ── Detect industry from query ─────────────────────────
-const INDUSTRY_MAP: Record<string, string[]> = {
-  'ngân hàng': ['Ngân hàng', 'Bank'],
-  'bank': ['Ngân hàng', 'Bank'],
-  'bất động sản': ['Bất động sản', 'Real Estate'],
-  'bđs': ['Bất động sản', 'Real Estate'],
-  'chứng khoán': ['Chứng khoán', 'Securities'],
-  'ck': ['Chứng khoán', 'Securities'],
-  'thép': ['Thép', 'Steel'],
-  'dầu khí': ['Dầu khí', 'Oil & Gas'],
-  'điện': ['Điện', 'Electricity', 'Power'],
-  'xây dựng': ['Xây dựng', 'Construction'],
-  'xd': ['Xây dựng', 'Construction'],
-  'bán lẻ': ['Bán lẻ', 'Retail'],
-  'retail': ['Bán lẻ', 'Retail'],
-  'thực phẩm': ['Thực phẩm', 'Food'],
-  'food': ['Thực phẩm', 'Food'],
-  'công nghệ': ['Công nghệ', 'Technology'],
-  'tech': ['Công nghệ', 'Technology'],
-  'dược': ['Dược', 'Pharmaceutical'],
-  'pharma': ['Dược', 'Pharmaceutical'],
-  'sản xuất': ['Sản xuất', 'Manufacturing'],
-  'sx': ['Sản xuất', 'Manufacturing'],
-  'bảo hiểm': ['Bảo hiểm', 'Insurance'],
-  'insurance': ['Bảo hiểm', 'Insurance'],
-  'vận tải': ['Vận tải', 'Transportation'],
-  'logistics': ['Vận tải', 'Logistics'],
-  'hàng tiêu dùng': ['Hàng tiêu dùng', 'Consumer'],
-  'viễn thông': ['Viễn thông', 'Telecom'],
-  'thủy sản': ['Thủy sản', 'Seafood', 'Thủy sản'],
+interface AnalysisRow {
+  symbol: string
+  analysis_type: string
+  summary: string | null
+  score: number | null
+  recommendations: string[] | null
+  result: unknown
+  created_at: string | null
+}
+
+interface EnrichedCompany {
+  symbol: string
+  name: string | null
+  industry: string | null
+  exchange: string | null
+  kronosSignal: string | null
+  aiRating: number | null
+  peRatio: number | null
+  priceChange: number | null
+}
+
+const INDUSTRY_KEYWORDS: Record<string, string[]> = {
+  'ngân hàng': ['ngân hàng', 'bank'],
+  'bất động sản': ['bất động sản', 'bđs', 'real estate'],
+  'chứng khoán': ['chứng khoán', 'securities'],
+  'bán lẻ': ['bán lẻ', 'retail'],
+  'thép': ['thép', 'steel'],
+  'xây dựng': ['xây dựng', 'construction'],
+  'công nghệ': ['công nghệ', 'technology', 'tech'],
+  'dược': ['dược', 'pharma'],
+  'thủy sản': ['thủy sản', 'seafood'],
+  'vận tải': ['vận tải', 'logistics'],
+  'dầu khí': ['dầu khí', 'oil', 'gas'],
+  'điện': ['điện', 'power', 'tiện ích'],
+}
+
+function parsePathSymbol(path?: string): string | null {
+  const match = path?.match(/\/company\/([A-Za-z0-9]+)/)
+  return match?.[1]?.toUpperCase() || null
+}
+
+function extractSymbols(message: string, validSymbols: Set<string>): string[] {
+  return message
+    .toUpperCase()
+    .split(/[\s,;:.()[\]{}!?'"`/\\-]+/)
+    .filter(word => validSymbols.has(word))
 }
 
 function detectIndustry(message: string): string | null {
   const lower = message.toLowerCase()
-  for (const [keyword, industries] of Object.entries(INDUSTRY_MAP)) {
-    if (lower.includes(keyword)) return industries[0]
+  for (const [industry, keywords] of Object.entries(INDUSTRY_KEYWORDS)) {
+    if (keywords.some(keyword => lower.includes(keyword))) return industry
   }
   return null
 }
 
-// ── Extract symbol mentions ────────────────────────────
-const VN100_SYMBOLS = new Set([
-  'ACB','ANV','BCM','BID','BMP','BSI','BSR','BVH','BWE','CII',
-  'CMG','CTD','CTG','CTR','CTS','DBC','DCM','DGC','DGW','DIG',
-  'DPM','DSE','DXG','DXS','EIB','EVF','FPT','FRT','FTS','GAS',
-  'GEE','GEX','GMD','GVR','HAG','HCM','HDB','HDC','HDG','HHV',
-  'HPG','HSG','HT1','IMP','KBC','KDC','KDH','KOS','LPB','MBB',
-  'MSB','MSN','MWG','NAB','NKG','NLG','NT2','NVL','OCB','PAN',
-  'PC1','PDR','PHR','PLX','PNJ','POW','PVD','PVT','REE','SAB',
-  'SBT','SCS','SHB','SIP','SJS','SSB','SSI','STB','SZC','TCB',
-  'TCH','TPB','VCB','VCG','VCI','VGC','VHC','VHM','VIB','VIC',
-  'VIX','VJC','VND','VNM','VPB','VPI','VPL','VRE','VSC','VTP',
-])
-
-function extractSymbols(message: string): string[] {
-  const words = message.toUpperCase().split(/[\s,;.()]+/)
-  return words.filter(w => VN100_SYMBOLS.has(w))
+function num(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-// ── Main handler ───────────────────────────────────────
+function formatNumber(value: number | null | undefined, digits = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'n/a'
+  return value.toLocaleString('vi-VN', { maximumFractionDigits: digits })
+}
+
+function formatVndThousand(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'n/a'
+  return `${Math.round(value * 1000).toLocaleString('vi-VN')} ₫`
+}
+
+function summarizeReportData(data: Record<string, unknown> | null | undefined) {
+  if (!data) return {}
+  const entries = Object.entries(data)
+    .filter(([, value]) => value !== null && value !== undefined && typeof value !== 'object')
+    .slice(0, 40)
+  return Object.fromEntries(entries)
+}
+
+function latestReportsByType(reports: FinancialReport[]) {
+  const sorted = [...reports].sort((a, b) => b.year - a.year || b.quarter - a.quarter)
+  const seen = new Set<string>()
+  const result: Array<Record<string, unknown>> = []
+  for (const report of sorted) {
+    const key = `${report.symbol}:${report.report_type}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push({
+      symbol: report.symbol,
+      period: `Q${report.quarter}/${report.year}`,
+      type: report.report_type,
+      data: summarizeReportData(report.report_data),
+      raw_text: report.raw_text?.slice(0, 1200) || null,
+    })
+  }
+  return result
+}
+
+function priceStats(rows: PriceRow[]) {
+  const bySymbol = new Map<string, PriceRow[]>()
+  for (const row of rows) {
+    if (!bySymbol.has(row.symbol)) bySymbol.set(row.symbol, [])
+    bySymbol.get(row.symbol)!.push(row)
+  }
+  return [...bySymbol.entries()].map(([symbol, items]) => {
+    const sorted = items
+      .filter(item => item.close !== null)
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const first = sorted[0]
+    const latest = sorted[sorted.length - 1]
+    const change = first?.close && latest?.close
+      ? (latest.close - first.close) / Math.abs(first.close) * 100
+      : null
+    const avgVolume = sorted.length
+      ? sorted.reduce((sum, item) => sum + (item.volume || 0), 0) / sorted.length
+      : null
+    return {
+      symbol,
+      latest_date: latest?.date || null,
+      latest_close: latest?.close || null,
+      sampled_days: sorted.length,
+      period_change_pct: change,
+      avg_volume: avgVolume,
+    }
+  })
+}
+
+function chooseRelevantCompanies(
+  message: string,
+  currentPath: string | undefined,
+  companies: Company[],
+  highlights: Map<string, HighlightRow>,
+  kronos: Map<string, KronosRow>,
+) {
+  const validSymbols = new Set(companies.map(company => company.symbol))
+  const mentioned = extractSymbols(message, validSymbols)
+  const pathSymbol = parsePathSymbol(currentPath)
+  const industry = detectIndustry(message)
+  const lower = message.toLowerCase()
+
+  let selected = companies.filter(company => mentioned.includes(company.symbol))
+  if (selected.length === 0 && pathSymbol && validSymbols.has(pathSymbol)) {
+    selected = companies.filter(company => company.symbol === pathSymbol)
+  }
+  if (industry) {
+    selected = companies.filter(company => company.industry?.toLowerCase().includes(industry))
+  }
+
+  if (selected.length === 0 && (lower.includes('kronos') || lower.includes('mua') || lower.includes('bán') || lower.includes('buy') || lower.includes('sell'))) {
+    const wantsSell = lower.includes('bán') || lower.includes('sell') || lower.includes('giảm')
+    const signals = wantsSell ? ['STRONG_SELL', 'SELL'] : ['STRONG_BUY', 'BUY']
+    selected = companies.filter(company => signals.includes(String(kronos.get(company.symbol)?.metrics?.signal || '')))
+  }
+
+  if (selected.length === 0 && (lower.includes('top') || lower.includes('rating') || lower.includes('tốt') || lower.includes('khuyến nghị'))) {
+    selected = [...companies]
+      .sort((a, b) => (highlights.get(b.symbol)?.ai_rating || -1) - (highlights.get(a.symbol)?.ai_rating || -1))
+      .slice(0, 20)
+  }
+
+  if (selected.length === 0) {
+    selected = [...companies]
+      .sort((a, b) => (highlights.get(b.symbol)?.ai_rating || -1) - (highlights.get(a.symbol)?.ai_rating || -1))
+      .slice(0, 20)
+  }
+
+  return selected.slice(0, 25)
+}
+
+function buildCompanySnapshot(
+  companies: Company[],
+  highlights: Map<string, HighlightRow>,
+  kronos: Map<string, KronosRow>,
+  analyses: AnalysisRow[],
+) {
+  const analysisBySymbol = new Map<string, AnalysisRow>()
+  for (const item of analyses) {
+    if (!analysisBySymbol.has(item.symbol)) analysisBySymbol.set(item.symbol, item)
+  }
+  return companies.map(company => {
+    const h = highlights.get(company.symbol)
+    const k = kronos.get(company.symbol)
+    const a = analysisBySymbol.get(company.symbol)
+    let result: Record<string, any> = {}
+    if (a?.result && typeof a.result === 'object') {
+      result = a.result as Record<string, any>
+    } else if (typeof a?.result === 'string') {
+      try {
+        result = JSON.parse(a.result)
+      } catch {
+        result = {}
+      }
+    }
+    const resultRisks = [
+      ...(Array.isArray(result.key_risks) ? result.key_risks : []),
+      ...(Array.isArray(result.risks) ? result.risks : []),
+      ...(Array.isArray(result.anomalies) ? result.anomalies.map((item: any) => item.description || item.label || String(item)) : []),
+    ].filter(Boolean)
+    return {
+      symbol: company.symbol,
+      name: company.name,
+      industry: company.industry,
+      exchange: company.exchange,
+      market_cap: company.market_cap || h?.market_cap || null,
+      profile: company.profile_text?.slice(0, 700) || null,
+      valuation: {
+        pe: h?.pe_ratio ?? null,
+        pb: h?.pb_ratio ?? null,
+        eps: h?.eps ?? null,
+        roe: h?.roe ?? null,
+        roa: h?.roa ?? null,
+        dividend_yield: h?.dividend_yield ?? null,
+      },
+      price: {
+        current_price: h?.current_price ?? null,
+        change_1m_pct: h?.price_change_1m ?? null,
+        change_3m_pct: h?.price_change_3m ?? null,
+        change_1y_pct: h?.price_change_1y ?? null,
+      },
+      ai: {
+        rating: h?.ai_rating ?? a?.score ?? null,
+        summary: h?.ai_summary || a?.summary || result.summary || result.verdict || null,
+        anomalies: h?.anomalies?.length ? h.anomalies : resultRisks,
+        recommendations: a?.recommendations || result.recommendations || null,
+      },
+      kronos: {
+        prediction_date: k?.prediction_date || null,
+        metrics: k?.metrics || null,
+      },
+    }
+  })
+}
+
+function enrichCompanies(
+  companies: Company[],
+  highlights: Map<string, HighlightRow>,
+  kronos: Map<string, KronosRow>,
+): EnrichedCompany[] {
+  return companies.map(company => ({
+    symbol: company.symbol,
+    name: company.name,
+    industry: company.industry,
+    exchange: company.exchange,
+    kronosSignal: String(kronos.get(company.symbol)?.metrics?.signal || '') || null,
+    aiRating: highlights.get(company.symbol)?.ai_rating ?? null,
+    peRatio: highlights.get(company.symbol)?.pe_ratio ?? null,
+    priceChange: highlights.get(company.symbol)?.price_change_1m ?? null,
+  }))
+}
+
+function latestRatio(symbol: string, reports: ReturnType<typeof latestReportsByType>) {
+  const ratio = reports.find(report => report.symbol === symbol && report.type === 'ratio')
+  const data = (ratio?.data || {}) as Record<string, unknown>
+  return {
+    pe: num(data.p_e) ?? num(data.pe) ?? null,
+    pb: num(data.p_b) ?? num(data.pb) ?? null,
+    roe: num(data.roe_trailling) ?? num(data.roe) ?? null,
+    eps: num(data.trailing_eps) ?? num(data.eps) ?? null,
+  }
+}
+
+function fallbackAnswer(
+  message: string,
+  snapshots: ReturnType<typeof buildCompanySnapshot>,
+  stats: ReturnType<typeof priceStats>,
+  reports: ReturnType<typeof latestReportsByType>,
+) {
+  const top = snapshots.slice(0, 8)
+  const lines = [
+    `Mình đã tổng hợp dữ liệu nội bộ AIFIA cho câu hỏi: "${message}".`,
+    '',
+    'Nhận định chính:',
+    ...top.map(item => {
+      const signal = String(item.kronos.metrics?.signal || 'n/a')
+      const rating = formatNumber(num(item.ai.rating), 0)
+      const ratio = latestRatio(item.symbol, reports)
+      const pe = formatNumber(ratio.pe ?? num(item.valuation.pe), 1)
+      const pb = formatNumber(ratio.pb ?? num(item.valuation.pb), 1)
+      const roe = formatNumber(ratio.roe ?? num(item.valuation.roe), 1)
+      const price = formatVndThousand(num(item.price.current_price))
+      const change = formatNumber(num(item.price.change_1m_pct), 1)
+      const summary = item.ai.summary ? ` ${item.ai.summary}` : ''
+      return `- ${item.symbol}: ${item.industry || 'n/a'}; giá ${price}; 1M ${change}%; P/E ${pe}; P/B ${pb}; ROE ${roe}%; AIFIA ${rating}; Kronos ${signal}.${summary}`
+    }),
+  ]
+  const risks = top.flatMap(item => item.ai.anomalies || []).slice(0, 6)
+  if (risks.length) {
+    lines.push('', 'Rủi ro/cảnh báo nổi bật:', ...risks.map(risk => `- ${risk}`))
+  }
+  if (stats.length) {
+    lines.push('', 'Diễn biến giá mẫu:', ...stats.slice(0, 5).map(item =>
+      `- ${item.symbol}: close mới nhất ${formatVndThousand(item.latest_close)}, biến động mẫu ${formatNumber(item.period_change_pct, 1)}% trong ${item.sampled_days} phiên.`
+    ))
+  }
+  lines.push('', 'Kết luận: đây là bản tổng hợp rule-based từ dữ liệu đang có. Khi cấu hình OPENAI_API_KEY, AIFIA sẽ dùng model để hiểu câu hỏi sâu hơn, so sánh nhiều bảng và viết luận điểm tự nhiên hơn.')
+  return lines.join('\n')
+}
+
+async function askOpenAI(question: string, context: unknown) {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return null
+
+  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const instructions = [
+    'Bạn là AIFIA, trợ lý phân tích tài chính chứng khoán Việt Nam.',
+    'Trả lời bằng tiếng Việt, đúng ngữ cảnh câu hỏi, ưu tiên dữ liệu đã cung cấp.',
+    'Không bịa dữ liệu. Nếu dữ liệu thiếu, nói rõ thiếu phần nào.',
+    'Tổng hợp từ nhiều bảng: hồ sơ công ty, highlights, BCTC, giá, Kronos, analysis_results, macro nếu có.',
+    'Không đưa khuyến nghị đầu tư chắc chắn. Nêu rủi ro và các điểm cần kiểm chứng.',
+    'Định dạng dễ đọc: nhận định chính, dữ liệu hỗ trợ, rủi ro, kết luận thực hành.',
+  ].join('\n')
+  const userContent = `Câu hỏi người dùng:\n${question}\n\nDữ liệu nội bộ AIFIA dạng JSON:\n${JSON.stringify(context)}`
+
+  if (!baseUrl.includes('api.openai.com')) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: instructions },
+          { role: 'user', content: userContent },
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+      }),
+    })
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(`AI provider ${response.status}: ${detail}`)
+    }
+    const data = await response.json()
+    return data.choices?.[0]?.message?.content || null
+  }
+
+  const response = await fetch(`${baseUrl}/responses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      instructions,
+      input: userContent,
+      max_output_tokens: 1200,
+    }),
+  })
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    throw new Error(`OpenAI ${response.status}: ${detail}`)
+  }
+  const data = await response.json()
+  return data.output_text
+    || data.output?.flatMap((item: any) => item.content || []).map((part: any) => part.text).filter(Boolean).join('\n')
+    || null
+}
+
 export async function POST(req: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY
@@ -126,213 +423,85 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Supabase chưa được cấu hình' }, { status: 500 })
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey)
-  let { message } = await req.json()
+  const { message, currentPath } = await req.json()
   if (!message || typeof message !== 'string') {
     return NextResponse.json({ error: 'Vui lòng nhập câu hỏi' }, { status: 400 })
   }
-  message = message.trim()
 
-  // ── Step 1: Fetch data ──
-  const [companiesRes, kronosRes, highlightsRes] = await Promise.all([
-    supabase.from('companies').select('symbol, name, industry, exchange, market_cap'),
-    supabase.from('kronos_predictions').select('symbol, metrics'),
-    supabase.from('company_highlights').select('symbol, ai_rating, pe_ratio, pb_ratio, roe, current_price, price_change_1m'),
+  const supabase = createClient(supabaseUrl, supabaseKey)
+  const [companiesRes, highlightsRes, kronosRes, macroRes] = await Promise.all([
+    supabase.from('companies').select('symbol, name, industry, exchange, market_cap, profile_text').limit(200),
+    supabase.from('company_highlights').select('*').limit(200),
+    supabase.from('kronos_predictions').select('symbol, prediction_date, metrics, predicted_ohlcv').order('prediction_date', { ascending: false }).limit(200),
+    supabase.from('macro_data').select('indicator, value, unit, period, source').limit(80),
   ])
 
-  const companies: Company[] = (companiesRes.data || []) as Company[]
-  const kronosMap = new Map<string, KronosRow['metrics']>()
-  for (const k of (kronosRes.data || []) as KronosRow[]) {
-    if (k.metrics) kronosMap.set(k.symbol, k.metrics)
-  }
-  const highlightsMap = new Map<string, HighlightRow>()
-  for (const h of (highlightsRes.data || []) as HighlightRow[]) {
-    highlightsMap.set(h.symbol, h)
+  if (companiesRes.error) throw companiesRes.error
+  const companies = (companiesRes.data || []) as Company[]
+  const highlights = new Map((highlightsRes.data || []).map((item: HighlightRow) => [item.symbol, item]))
+  const kronos = new Map<string, KronosRow>()
+  for (const item of (kronosRes.data || []) as KronosRow[]) {
+    if (!kronos.has(item.symbol)) kronos.set(item.symbol, item)
   }
 
-  const lowerMsg = message.toLowerCase()
+  const relevantCompanies = chooseRelevantCompanies(message, currentPath, companies, highlights, kronos)
+  const symbols = relevantCompanies.map(company => company.symbol)
 
-  // ── Step 2: Detect intent ──
-  let matchedCompanies: Company[] = []
-  let answer = ''
-  let intentLabel = ''
+  const [financialRes, priceRes, analysisRes] = symbols.length ? await Promise.all([
+    supabase
+      .from('financial_reports')
+      .select('symbol, quarter, year, report_type, report_data, raw_text')
+      .in('symbol', symbols)
+      .order('year', { ascending: false })
+      .order('quarter', { ascending: false })
+      .limit(Math.min(symbols.length * 12, 240)),
+    supabase
+      .from('price_history')
+      .select('symbol, date, close, volume')
+      .in('symbol', symbols)
+      .order('date', { ascending: false })
+      .limit(Math.min(symbols.length * 260, 2500)),
+    supabase
+      .from('analysis_results')
+      .select('symbol, analysis_type, summary, score, recommendations, result, created_at')
+      .in('symbol', symbols)
+      .order('created_at', { ascending: false })
+      .limit(Math.min(symbols.length * 4, 100)),
+  ]) : [{ data: [] }, { data: [] }, { data: [] }]
 
-  // --- 2a: Extract specific symbols ---
-  const mentionedSymbols = extractSymbols(message)
+  const financialReports = (financialRes.data || []) as FinancialReport[]
+  const priceRows = (priceRes.data || []) as PriceRow[]
+  const analyses = (analysisRes.data || []) as AnalysisRow[]
+  const snapshots = buildCompanySnapshot(relevantCompanies, highlights, kronos, analyses)
+  const stats = priceStats(priceRows)
+  const latestReports = latestReportsByType(financialReports)
 
-  if (mentionedSymbols.length > 0 && !lowerMsg.includes('ngành') && !lowerMsg.includes('industry') && !lowerMsg.includes('tất cả') && !lowerMsg.includes('all') && !lowerMsg.includes('danh sách')) {
-    // Specific symbol query
-    matchedCompanies = companies.filter(c => mentionedSymbols.includes(c.symbol))
-    if (matchedCompanies.length === 1) {
-      const c = matchedCompanies[0]
-      const k = kronosMap.get(c.symbol)
-      const h = highlightsMap.get(c.symbol)
-      const parts = [`📊 **${c.symbol}**`]
-      if (c.name) parts.push(c.name)
-      if (c.industry) parts.push(`Ngành: ${c.industry}`)
-      if (c.exchange) parts.push(`Sàn: ${c.exchange}`)
-      if (k?.signal) parts.push(`Kronos: ${k.signal}`)
-      if (h?.ai_rating) parts.push(`AIFIA Rating: ${Math.round(h.ai_rating)}/100`)
-      if (h?.pe_ratio) parts.push(`P/E: ${h.pe_ratio.toFixed(1)}x`)
-      answer = parts.join(' · ')
-    } else {
-      answer = `Tìm thấy ${matchedCompanies.length} mã: ${matchedCompanies.map(c => c.symbol).join(', ')}`
-    }
-    intentLabel = 'symbol_lookup'
+  const context = {
+    as_of: new Date().toISOString(),
+    user_question: message,
+    current_path: currentPath || null,
+    selected_symbols: symbols,
+    companies: snapshots,
+    latest_financial_reports: latestReports,
+    price_stats: stats,
+    macro_data: macroRes.data || [],
   }
 
-  // --- 2b: Kronos signal ---
-  else if (KRONOS_WORDS.some(w => lowerMsg.includes(w)) ||
-           BUY_WORDS.some(w => lowerMsg.includes(w)) ||
-           SELL_WORDS.some(w => lowerMsg.includes(w))) {
-    const isBuy = BUY_WORDS.some(w => lowerMsg.includes(w)) && !SELL_WORDS.some(w => lowerMsg.includes(w))
-    const isSell = SELL_WORDS.some(w => lowerMsg.includes(w)) && !BUY_WORDS.some(w => lowerMsg.includes(w))
-    const isBullish = lowerMsg.includes('tăng') || lowerMsg.includes('lên')
-    const isBearish = lowerMsg.includes('giảm') || lowerMsg.includes('xuống')
-
-    // Determine signal filter
-    let signalFilter: string[] = []
-    if (isBuy || isBullish) signalFilter = ['STRONG_BUY', 'BUY']
-    else if (isSell || isBearish) signalFilter = ['STRONG_SELL', 'SELL']
-    else signalFilter = ['STRONG_BUY', 'BUY', 'STRONG_SELL', 'SELL']
-
-    // Filter companies by kronos signal (only those with data)
-    for (const c of companies) {
-      const k = kronosMap.get(c.symbol)
-      if (k?.signal && signalFilter.includes(k.signal)) {
-        matchedCompanies.push(c)
-      }
-    }
-
-    // Sort: STRONG_BUY/STRONG_SELL first
-    matchedCompanies.sort((a, b) => {
-      const ka = kronosMap.get(a.symbol)
-      const kb = kronosMap.get(b.symbol)
-      const order = ['STRONG_BUY', 'STRONG_SELL', 'BUY', 'SELL']
-      const ia = ka?.signal ? order.indexOf(ka.signal) : 99
-      const ib = kb?.signal ? order.indexOf(kb.signal) : 99
-      return ia - ib
-    })
-
-    const signalLabel = signalFilter.includes('STRONG_BUY') ? 'mua' : 'bán'
-    answer = `📡 **${matchedCompanies.length} mã có tín hiệu Kronos ${signalLabel.toUpperCase()}**`
-    intentLabel = 'kronos_signal'
+  let answer: string
+  let usedAi = false
+  try {
+    const aiAnswer = await askOpenAI(message, context)
+    answer = aiAnswer || fallbackAnswer(message, snapshots, stats, latestReports)
+    usedAi = Boolean(aiAnswer)
+  } catch (error) {
+    console.error('AI chat error:', error)
+    answer = fallbackAnswer(message, snapshots, stats, latestReports)
   }
 
-  // --- 2c: Industry ---
-  else if (INDUSTRY_WORDS.some(w => lowerMsg.includes(w)) || Object.keys(INDUSTRY_MAP).some(k => lowerMsg.includes(k))) {
-    const industry = detectIndustry(message)
-    if (industry) {
-      matchedCompanies = companies.filter(c =>
-        c.industry?.toLowerCase().includes(industry.toLowerCase())
-      )
-      answer = `🏭 **${matchedCompanies.length} mã ngành ${industry}**`
-      intentLabel = 'industry'
-    }
-  }
-
-  // --- 2d: Top rated / Strongest (check BEFORE valuation to avoid 'cao' ambiguity) ---
-  else if (TOP_WORDS.some(w => lowerMsg.includes(w)) || RECOMMEND_WORDS.some(w => lowerMsg.includes(w))) {
-    // Sort by AI rating
-    const withRating = companies
-      .map(c => ({ company: c, rating: highlightsMap.get(c.symbol)?.ai_rating ?? -1 }))
-      .filter(x => x.rating > 0)
-      .sort((a, b) => b.rating - a.rating)
-      .slice(0, 20)
-    matchedCompanies = withRating.map(x => x.company)
-    answer = `🏆 **Top ${matchedCompanies.length} mã có AIFIA Rating cao nhất**`
-    intentLabel = 'top_rated'
-  }
-
-  // --- 2e: Valuation (PE/PB) ---
-  // Only match if PE/PB is explicitly mentioned, OR if "định giá" is in the query
-  else if (CHEAP_WORDS.some(w => lowerMsg.includes(w)) ||
-           EXPENSIVE_WORDS.some(w => lowerMsg.includes(w)) ||
-           lowerMsg.includes('định giá') ||
-           lowerMsg.includes('valuation')) {
-    const isExpensive = EXPENSIVE_WORDS.some(w => lowerMsg.includes(w)) || lowerMsg.includes('cao')
-    const hasPE = lowerMsg.includes('pe') || lowerMsg.includes('p/e')
-    const hasPB = lowerMsg.includes('pb') || lowerMsg.includes('p/b')
-
-    // Default to check PE when neither PE nor PB is explicitly mentioned
-    const checkPE = hasPE || (!hasPE && !hasPB)
-    const checkPB = hasPB || (!hasPE && !hasPB && !checkPE)
-
-    for (const c of companies) {
-      const h = highlightsMap.get(c.symbol)
-      if (!h) continue
-
-      if (checkPE && h.pe_ratio !== null && h.pe_ratio > 0) {
-        if (isExpensive && h.pe_ratio > 20) matchedCompanies.push(c)
-        else if (!isExpensive && h.pe_ratio < 12) matchedCompanies.push(c)
-      } else if (checkPB && h.pb_ratio !== null && h.pb_ratio > 0) {
-        if (isExpensive && h.pb_ratio > 3) matchedCompanies.push(c)
-        else if (!isExpensive && h.pb_ratio < 1) matchedCompanies.push(c)
-      }
-    }
-
-    const suffix = isExpensive ? 'cao' : 'thấp'
-    answer = `💵 **${matchedCompanies.length} mã có định giá ${suffix}**`
-    intentLabel = 'valuation'
-
-    // Fallback: if valuation found nothing but data exists, show a helpful message
-    if (matchedCompanies.length === 0 && companies.length > 0) {
-      const withPE = companies.filter(c => {
-        const h = highlightsMap.get(c.symbol)
-        return h !== undefined && h.pe_ratio !== null && h.pe_ratio > 0
-      })
-      answer = `💵 **0 mã có định giá ${suffix}** (${withPE.length} mã có dữ liệu P/E)`
-    }
-  }
-
-  // --- 2f: All / list all ---
-  else if (lowerMsg.includes('tất cả') || lowerMsg.includes('danh sách') || lowerMsg.includes('all') || lowerMsg === '') {
-    matchedCompanies = companies
-    answer = `📋 **Toàn bộ ${matchedCompanies.length} mã trong danh sách**`
-    intentLabel = 'all'
-  }
-
-  // --- 2g: Default — try keyword match in symbol/name/industry ---
-  else {
-    const words = message.toUpperCase().split(/[\s,;.()]+/).filter((w: string) => w.length >= 2)
-    matchedCompanies = companies.filter(c => {
-      const searchTarget = [c.symbol, c.name?.toUpperCase() || '', c.industry?.toUpperCase() || ''].join(' ')
-      return words.some((w: string) => searchTarget.includes(w))
-    })
-    if (matchedCompanies.length === 0) {
-      matchedCompanies = companies
-      answer = `🤔 Không tìm thấy kết quả cho "${message}". Hiển thị toàn bộ danh sách.`
-    } else {
-      answer = `🔍 **Tìm thấy ${matchedCompanies.length} mã**`
-    }
-    intentLabel = 'search'
-  }
-
-  // ── Step 3: Format response ──
-  const enrichedCompanies = matchedCompanies.slice(0, 100).map(c => ({
-    symbol: c.symbol,
-    name: c.name,
-    industry: c.industry,
-    exchange: c.exchange,
-    kronosSignal: kronosMap.get(c.symbol)?.signal || null,
-    aiRating: highlightsMap.get(c.symbol)?.ai_rating ?? null,
-    peRatio: highlightsMap.get(c.symbol)?.pe_ratio ?? null,
-    priceChange: highlightsMap.get(c.symbol)?.price_change_1m ?? null,
-  }))
-
-  // Add hint for Kronos signals if query didn't match any
-  if (enrichedCompanies.length > 0 && intentLabel === 'search') {
-    const hasKronos = enrichedCompanies.some(c => c.kronosSignal)
-    if (!hasKronos) {
-      answer += '\n💡 Gợi ý: Gõ "mã nào kronos buy" để xem tín hiệu Kronos.'
-    }
-  }
-
-  const response: ChatResponse = {
+  return NextResponse.json({
     answer,
-    companies: enrichedCompanies,
-    resultsCount: enrichedCompanies.length,
-  }
-
-  return NextResponse.json(response)
+    companies: enrichCompanies(relevantCompanies, highlights, kronos),
+    resultsCount: relevantCompanies.length,
+    usedAi,
+  })
 }
