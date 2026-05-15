@@ -196,7 +196,7 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
     }))
 
     const controller = new AbortController()
-    const timeoutId = window.setTimeout(() => controller.abort(), 45000)
+    const timeoutId = window.setTimeout(() => controller.abort(), 65000)
 
     try {
       const res = await fetch('/api/chat', {
@@ -222,7 +222,7 @@ export default function ChatBot({ onResultsChange }: ChatBotProps) {
       setSuggestionCycle(nextCycle)
       setSuggestions(pickSuggestions(pool, nextCycle))
     } catch {
-      const errorText = 'Lỗi kết nối hoặc AI phản hồi quá lâu, vui lòng thử lại.'
+      const errorText = 'AI phản hồi quá lâu hoặc kết nối bị gián đoạn. AIFIA đã dừng yêu cầu này, vui lòng thử câu hỏi ngắn hơn.'
       setState(prev => ({
         ...prev,
         messages: [...prev.messages, { role: 'assistant', text: errorText }],

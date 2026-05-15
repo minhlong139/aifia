@@ -23,6 +23,7 @@ class CrawlerConfig:
     # Supabase
     supabase_url: str = field(default_factory=lambda: os.getenv("SUPABASE_URL", ""))
     supabase_key: str = field(default_factory=lambda: os.getenv("SUPABASE_SERVICE_KEY", ""))
+    vnstock_api_key: str = field(default_factory=lambda: os.getenv("VNSTOCK_API_KEY", ""))
     
     # Enable/disable sources
     enable_vnstock: bool = True

@@ -2,8 +2,9 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState, useMemo, useCallback } from 'react'
-import { getCompanies, getDataCoverage } from '@/lib/supabase'
+import { getCompanies, getDataCoverage, getCompanyHighlights } from '@/lib/supabase'
 import ChatBot from '@/components/ChatBot'
+import MarketChart from '@/components/MarketChart'
 
 interface Company {
   symbol: string
@@ -22,6 +23,18 @@ interface ChatCompany extends Company {
 interface ChatResult {
   answer: string
   companies: ChatCompany[]
+}
+
+interface Highlight {
+  symbol: string
+  current_price: number | null
+  price_change_1m: number | null
+  price_change_3m: number | null
+  price_change_1y: number | null
+  pe_ratio: number | null
+  pb_ratio: number | null
+  ai_rating: number | null
+  ai_summary: string | null
 }
 
 type CoverageMap = Record<string, { financial: boolean; price: boolean; kronos: any | null }>
@@ -51,10 +64,39 @@ function priceChangeColor(pct: number | null): string {
   return pct > 0 ? 'text-green-600' : pct < 0 ? 'text-red-600' : ''
 }
 
+function signalWeight(signal: string | null): number {
+  const weights: Record<string, number> = {
+    STRONG_BUY: 40,
+    BUY: 28,
+    NEUTRAL: 8,
+    SELL: -22,
+    STRONG_SELL: -36,
+  }
+  return signal ? (weights[signal] || 0) : 0
+}
+
+function actionLabel(signal: string | null, rating: number | null, change: number | null): string {
+  if (signal === 'STRONG_BUY' && (rating || 0) >= 70) return 'Mua theo dõi'
+  if (signal === 'BUY') return 'Tăng tỷ trọng'
+  if (signal === 'STRONG_SELL') return 'Né / giảm mạnh'
+  if (signal === 'SELL') return 'Giảm tỷ trọng'
+  if ((rating || 0) >= 78 && (change || 0) >= 0) return 'Ưu tiên quan sát'
+  if ((rating || 0) >= 65) return 'Giữ / theo dõi'
+  return 'Trung lập'
+}
+
+function actionClass(action: string): string {
+  if (action.includes('Mua') || action.includes('Tăng')) return 'bg-green-50 text-green-700 border-green-200'
+  if (action.includes('Né') || action.includes('Giảm')) return 'bg-red-50 text-red-700 border-red-200'
+  if (action.includes('Ưu tiên') || action.includes('Giữ')) return 'bg-blue-50 text-blue-700 border-blue-200'
+  return 'bg-gray-50 text-gray-600 border-gray-200'
+}
+
 export default function HomePage() {
   const router = useRouter()
   const [companies, setCompanies] = useState<Company[]>([])
   const [coverage, setCoverage] = useState<CoverageMap>({})
+  const [highlights, setHighlights] = useState<Highlight[]>([])
   const [loading, setLoading] = useState(true)
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
 
@@ -62,10 +104,12 @@ export default function HomePage() {
     Promise.all([
       getCompanies(100),
       getDataCoverage(),
+      getCompanyHighlights().catch(() => []),
     ])
-      .then(([companies, cov]) => {
+      .then(([companies, cov, h]) => {
         setCompanies(companies)
         setCoverage(cov as CoverageMap)
+        setHighlights(Array.isArray(h) ? h : [])
       })
       .catch(() => setCompanies([]))
       .finally(() => setLoading(false))
@@ -89,6 +133,32 @@ export default function HomePage() {
     [companies, coverage]
   )
 
+  const highlightMap = useMemo(() => {
+    return new Map(highlights.map(item => [item.symbol, item]))
+  }, [highlights])
+
+  const recommendations = useMemo(() => {
+    return companies
+      .map(company => {
+        const h = highlightMap.get(company.symbol)
+        const signal = String(coverage[company.symbol]?.kronos?.signal || '') || null
+        const rating = h?.ai_rating ?? null
+        const change = h?.price_change_1m ?? null
+        return {
+          ...company,
+          highlight: h,
+          signal,
+          rating,
+          change,
+          action: actionLabel(signal, rating, change),
+          rankScore: (rating || 0) + signalWeight(signal) + Math.max(Math.min(change || 0, 12), -12),
+        }
+      })
+      .filter(item => item.highlight || item.signal)
+      .sort((a, b) => b.rankScore - a.rankScore)
+      .slice(0, 6)
+  }, [companies, coverage, highlightMap])
+
   const handleResultsChange = useCallback((results: ChatResult | null) => {
     setChatResult(results)
   }, [])
@@ -110,6 +180,65 @@ export default function HomePage() {
 
       {/* ── Hide main list when chat is active to avoid z-index overlap ── */}
       <div className="max-w-7xl mx-auto px-4 py-4">
+        {chatResult === null && (
+          <section className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <MarketChart
+              symbol="VNINDEX"
+              title="Toàn cảnh VNINDEX"
+              subtitle="Dữ liệu giá thị trường từ luồng Vnstock đã đồng bộ vào Supabase"
+              kind="index"
+              defaultRange="6M"
+              className="lg:col-span-2"
+            />
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Khuyến nghị nổi bật</h2>
+                  <p className="mt-1 text-xs text-gray-500">Xếp hạng theo AIFIA rating, Kronos và biến động 1 tháng</p>
+                </div>
+                <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{recommendations.length}</span>
+              </div>
+              {recommendations.length === 0 ? (
+                <div className="py-10 text-center text-sm text-gray-400">Chưa có dữ liệu khuyến nghị</div>
+              ) : (
+                <div className="space-y-2">
+                  {recommendations.map(item => (
+                    <button
+                      key={item.symbol}
+                      onClick={() => router.push(`/company/${item.symbol}`)}
+                      onMouseEnter={() => router.prefetch(`/company/${item.symbol}`)}
+                      className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-left transition-colors hover:border-blue-200 hover:bg-blue-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-blue-700">{item.symbol}</span>
+                        <span className={`rounded border px-2 py-0.5 text-[10px] font-semibold ${actionClass(item.action)}`}>
+                          {item.action}
+                        </span>
+                        {item.rating !== null && (
+                          <span className={`ml-auto text-xs font-semibold ${ratingColor(item.rating)}`}>
+                            {Math.round(item.rating)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-gray-500">
+                        <span className="truncate">{item.industry || 'Chưa phân ngành'}</span>
+                        {item.highlight?.pe_ratio !== null && item.highlight?.pe_ratio !== undefined && item.highlight.pe_ratio > 0 && (
+                          <span>P/E {item.highlight.pe_ratio.toFixed(1)}</span>
+                        )}
+                        {item.change !== null && (
+                          <span className={priceChangeColor(item.change)}>
+                            {item.change > 0 ? '+' : ''}{item.change.toFixed(1)}%
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         {loading ? (
           <div className="text-center py-20 text-gray-400">
             <div className="text-4xl mb-3 animate-pulse">⏳</div>

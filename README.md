@@ -345,9 +345,22 @@ Xem chi tiết: [`supabase/schema.sql`](supabase/schema.sql)
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_KEY=your_service_role_key
+VNSTOCK_API_KEY=vnstock_xxx
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+AI_CHAT_TIMEOUT_MS=35000
+
+# Optional, used by /api/chat when Supabase has vector documents indexed
+ENABLE_VECTOR_RAG=true
+SUPABASE_VECTOR_RPC=match_documents
+VECTOR_MATCH_COUNT=8
+VECTOR_MATCH_THRESHOLD=0.70
 ```
 
 > **Security:** `SUPABASE_SERVICE_KEY` có quyền service role. Chỉ đặt trên server, không commit lên Git.
+> **Vnstock:** `VNSTOCK_API_KEY` được dùng ở crawler/server-side. Không đưa key vào biến `NEXT_PUBLIC_*`.
+> **Vector RAG:** nếu live DB chưa có RPC `match_documents`, có thể áp dụng mẫu [`supabase/vector_search.sql`](supabase/vector_search.sql).
 
 ---
 

@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from crawler.config import CrawlerConfig
 from crawler.pipeline import CrawlPipeline
 
+MARKET_INDEX_SYMBOLS = ["VNINDEX"]
+
 
 def load_symbol_list(data_dir: str) -> list:
     """Load symbol list from saved JSON or return VN100."""
@@ -87,6 +89,9 @@ def main():
     
     if args.price_only:
         print("💹 PRICE-ONLY MODE" + (" (incremental)" if args.incremental else ""))
+        for index_symbol in MARKET_INDEX_SYMBOLS:
+            if index_symbol not in symbols:
+                symbols.append(index_symbol)
         for i, sym in enumerate(symbols, 1):
             print(f"\n[{i}/{len(symbols)}] {sym}...")
             pipeline._crawl_price_history(sym)

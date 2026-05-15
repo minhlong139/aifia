@@ -41,15 +41,12 @@ def main():
     total_uploaded = 0
     price_files = sorted(glob.glob(os.path.join(data_dir, "price_*.json")))
 
+    if not price_files:
+        print("⚠️  No price_*.json files found.")
+        return
+
     if incremental:
-        # Lọc: chỉ upload records có date >= latest_in_supabase
-        # Lấy latest date từ Supabase (dùng symbol đầu tiên làm mốc)
-        first_sym = os.path.basename(price_files[0]).replace("price_", "").replace(".json", "")
-        latest_db = storage.get_latest_price_date(first_sym)
-        cutoff_date = latest_db if latest_db else "2000-01-01"
-        print(f"📅 Latest in Supabase: {cutoff_date}")
-    else:
-        cutoff_date = "2000-01-01"
+        print("📅 Incremental upload: checking latest date per symbol")
 
     for f in price_files:
         with open(f) as fh:
@@ -58,9 +55,9 @@ def main():
             continue
 
         symbol = records[0].get("symbol", "?")
+        cutoff_date = storage.get_latest_price_date(symbol) if incremental else None
 
-        if incremental and cutoff_date > "2000-01-01":
-            # Chỉ lấy records mới hơn cutoff
+        if incremental and cutoff_date:
             new_records = [r for r in records if r.get("date", "") > cutoff_date]
         else:
             new_records = records

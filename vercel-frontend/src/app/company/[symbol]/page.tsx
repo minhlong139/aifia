@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState, useMemo } from 'react'
 import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis, getCompanyHighlight } from '@/lib/supabase'
 import ChatBot from '@/components/ChatBot'
+import MarketChart from '@/components/MarketChart'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -321,6 +322,14 @@ export default function CompanyPage() {
             </div>
           </div>
 
+          <MarketChart
+            symbol={curSymbol}
+            title={`Diễn biến giá ${curSymbol}`}
+            subtitle="OHLCV lịch sử từ Vnstock, lấy qua Supabase để tải nhanh trên Vercel"
+            kind="stock"
+            defaultRange="6M"
+          />
+
           {/* ── AIFIA Score & Analysis ── */}
           {anScore !== undefined && anScore !== null && (
             <div className={`rounded-xl p-5 shadow-sm border ${scoreBg(anScore)}`}>
@@ -353,10 +362,10 @@ export default function CompanyPage() {
                 {realMetrics.roe !== undefined && realMetrics.roe !== null &&
                   <Metric label="ROE" value={`${realMetrics.roe}%`}
                     color={realMetrics.roe > 20 ? 'text-green-600' : realMetrics.roe < 10 ? 'text-red-600' : ''} />}
-                {highlights?.pe_ratio != null &&
+                {highlights?.pe_ratio != null && Number(highlights.pe_ratio) > 0 &&
                   <Metric label="P/E" value={`${(+highlights.pe_ratio).toFixed(1)}x`}
                     color={highlights.pe_ratio < 12 ? 'text-green-600' : highlights.pe_ratio > 25 ? 'text-yellow-600' : ''} />}
-                {highlights?.pb_ratio != null && <Metric label="P/B" value={`${(+highlights.pb_ratio).toFixed(1)}x`} />}
+                {highlights?.pb_ratio != null && Number(highlights.pb_ratio) > 0 && <Metric label="P/B" value={`${(+highlights.pb_ratio).toFixed(1)}x`} />}
                 {realMetrics.price != null && <Metric label="Giá" value={FMT.format(Math.round(+(realMetrics.price) * 1000)) + ' ₫'} />}
                 {highlights?.price_change_1m != null &&
                   <Metric label="1 tháng" value={`${highlights.price_change_1m > 0 ? '+' : ''}${(+highlights.price_change_1m).toFixed(1)}%`}

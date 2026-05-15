@@ -17,16 +17,34 @@ from ..config import CrawlerConfig
 
 class VnstockSource:
     """Data source using vnstock v4 API."""
+
+    INDEX_SYMBOLS = {"VNINDEX", "VN-INDEX", "HNXINDEX", "UPCOMINDEX", "VN30"}
     
     def __init__(self, config: CrawlerConfig, rate_limiter=None):
         self.config = config
         self._source = None
         self._source_name = 'KBS'
         self._rate_limiter = rate_limiter
+        self._registered = False
+    
+    def _ensure_registered(self):
+        """Register a Vnstock API key once when VNSTOCK_API_KEY is configured."""
+        if self._registered:
+            return
+        self._registered = True
+        if not self.config.vnstock_api_key:
+            return
+        try:
+            from vnstock import register_user
+            register_user(api_key=self.config.vnstock_api_key)
+            print("  [Vnstock] API key registered")
+        except Exception as e:
+            print(f"  [Vnstock] API key registration skipped: {e}")
     
     def _get_source(self, module: str):
         """Lazy-import and return the right vnstock API module."""
         if self._source is None:
+            self._ensure_registered()
             from vnstock.api.listing import Listing
             from vnstock.api.company import Company
             from vnstock.api.financial import Finance
@@ -209,35 +227,86 @@ class VnstockSource:
     # ──────────────────────────────────────────────
     # Price History
     # ──────────────────────────────────────────────
+
+    def _row_value(self, row: pd.Series, *keys: str):
+        for key in keys:
+            if key in row.index:
+                val = row.get(key)
+                if val is not None and not pd.isna(val):
+                    return val
+        return None
+
+    def _price_records_from_df(self, df: pd.DataFrame, symbol: str) -> List[Dict]:
+        if df is None or df.empty:
+            return []
+
+        records = []
+        for _, row in df.iterrows():
+            t = self._row_value(row, 'time', 'date', 'tradingDate', 'reportDate')
+            if t is None:
+                continue
+
+            dt = pd.to_datetime(t, errors='coerce')
+            if pd.isna(dt):
+                continue
+
+            open_price = self._row_value(row, 'open', 'Open')
+            high = self._row_value(row, 'high', 'High')
+            low = self._row_value(row, 'low', 'Low')
+            close = self._row_value(row, 'close', 'Close', 'value')
+            volume = self._row_value(row, 'volume', 'Volume', 'totalVolume')
+
+            records.append({
+                "symbol": symbol.upper().replace("VN-INDEX", "VNINDEX"),
+                "date": str(dt.date()),
+                "open": float(open_price) if open_price is not None else None,
+                "high": float(high) if high is not None else None,
+                "low": float(low) if low is not None else None,
+                "close": float(close) if close is not None else None,
+                "volume": int(volume) if volume is not None else 0,
+                "source": "vnstock",
+                "ingested_at": datetime.now().isoformat(),
+            })
+        return records
+    
+    def get_index_history(self, symbol: str, start: str = None,
+                          end: str = None) -> List[Dict]:
+        """Get historical OHLCV for market indices such as VNINDEX."""
+        self._ensure_registered()
+        start = start or self.config.price_start_date
+        end = end or datetime.now().strftime("%Y-%m-%d")
+        normalized = symbol.upper().replace("VN-INDEX", "VNINDEX")
+
+        try:
+            try:
+                from vnstock import Market
+            except ImportError:
+                from vnstock_data import Market
+
+            market = Market()
+            df = self._safe_call(market.index(normalized).ohlcv, start=start, end=end)
+            return self._price_records_from_df(df, normalized)
+        except Exception as e:
+            print(f"  [Vnstock] Error getting index price for {symbol}: {e}")
+            return []
     
     def get_price_history(self, symbol: str, start: str = None, 
                           end: str = None) -> List[Dict]:
         """Get historical OHLCV price data."""
+        normalized = symbol.upper()
+        if normalized in self.INDEX_SYMBOLS:
+            return self.get_index_history(normalized, start=start, end=end)
+
         quote = self._get_source('quote')(symbol)
         start = start or self.config.price_start_date
         end = end or datetime.now().strftime("%Y-%m-%d")
         
         try:
-            df = self._safe_call(quote.history, start=start, end=end)
-            if df is not None and not df.empty:
-                records = []
-                for _, row in df.iterrows():
-                    t = row.get('time')
-                    if pd.isna(t):
-                        continue
-                    
-                    records.append({
-                        "symbol": symbol.upper(),
-                        "date": str(t.date()) if hasattr(t, 'date') else str(t)[:10],
-                        "open": float(row.get('open', 0)) if not pd.isna(row.get('open', np.nan)) else None,
-                        "high": float(row.get('high', 0)) if not pd.isna(row.get('high', np.nan)) else None,
-                        "low": float(row.get('low', 0)) if not pd.isna(row.get('low', np.nan)) else None,
-                        "close": float(row.get('close', 0)) if not pd.isna(row.get('close', np.nan)) else None,
-                        "volume": int(row.get('volume', 0)) if not pd.isna(row.get('volume', np.nan)) else 0,
-                        "source": "vnstock",
-                        "ingested_at": datetime.now().isoformat(),
-                    })
-                return records
+            try:
+                df = self._safe_call(quote.history, start=start, end=end, interval='d')
+            except TypeError:
+                df = self._safe_call(quote.history, start=start, end=end)
+            return self._price_records_from_df(df, symbol)
         except Exception as e:
             print(f"  [Vnstock] Error getting price for {symbol}: {e}")
         

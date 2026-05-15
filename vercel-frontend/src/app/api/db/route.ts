@@ -51,13 +51,34 @@ export async function POST(req: NextRequest) {
 
       case 'getPriceHistory': {
         const { symbol, days = 365 } = params
+        const normalized = String(symbol || '').toUpperCase()
+        const aliases = normalized === 'VNINDEX'
+          ? ['VNINDEX', 'VN-INDEX', 'VNINDEX.VN', '^VNINDEX']
+          : [normalized]
         const { data } = await supabase
           .from('price_history')
-          .select('*')
-          .eq('symbol', symbol.toUpperCase())
+          .select('symbol, date, open, high, low, close, volume')
+          .in('symbol', aliases)
           .order('date', { ascending: false })
-          .limit(days)
-        return NextResponse.json(data ?? [])
+          .limit(Math.min(Number(days) || 365, 1500))
+
+        let rows = data ?? []
+        if (rows.length === 0 && normalized === 'VNINDEX') {
+          for (const table of ['market_indices', 'index_history', 'market_index_history']) {
+            const { data: indexRows, error } = await supabase
+              .from(table)
+              .select('symbol, date, open, high, low, close, volume')
+              .in('symbol', aliases)
+              .order('date', { ascending: false })
+              .limit(Math.min(Number(days) || 365, 1500))
+            if (!error && indexRows?.length) {
+              rows = indexRows
+              break
+            }
+          }
+        }
+
+        return NextResponse.json(rows)
       }
 
       case 'getAnalysis': {
@@ -101,20 +122,31 @@ export async function POST(req: NextRequest) {
       }
 
       case 'getDataCoverage': {
-        // Returns which symbols have financial/price + kronos data
-        const [fin, price, kronos] = await Promise.all([
-          supabase.from('financial_reports').select('symbol'),
-          supabase.from('price_history').select('symbol'),
-          supabase.from('kronos_predictions').select('symbol, metrics'),
+        // Avoid scanning the full price_history table on every dashboard load.
+        // company_highlights is materialized by the analysis pipeline and is enough
+        // for the listing-level "has price" indicator.
+        const [fin, highlights, kronos] = await Promise.all([
+          supabase.from('financial_reports').select('symbol').limit(5000),
+          supabase.from('company_highlights').select('symbol, current_price').limit(500),
+          supabase
+            .from('kronos_predictions')
+            .select('symbol, metrics, prediction_date')
+            .order('prediction_date', { ascending: false })
+            .limit(500),
         ])
         const finSet = new Set((fin.data || []).map(i => i.symbol))
-        const priceSet = new Set((price.data || []).map(i => i.symbol))
+        const priceSet = new Set((highlights.data || [])
+          .filter(i => i.current_price !== null && i.current_price !== undefined)
+          .map(i => i.symbol))
         const coverage: Record<string, { financial: boolean; price: boolean; kronos: any | null }> = {}
         for (const s of new Set([...finSet, ...priceSet])) {
           coverage[s] = { financial: finSet.has(s), price: priceSet.has(s), kronos: null }
         }
         for (const k of (kronos.data || [])) {
-          if (coverage[k.symbol]) coverage[k.symbol].kronos = k.metrics
+          if (!coverage[k.symbol]) {
+            coverage[k.symbol] = { financial: finSet.has(k.symbol), price: priceSet.has(k.symbol), kronos: null }
+          }
+          if (!coverage[k.symbol].kronos) coverage[k.symbol].kronos = k.metrics
         }
         return NextResponse.json(coverage)
       }

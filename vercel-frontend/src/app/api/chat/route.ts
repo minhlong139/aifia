@@ -63,6 +63,15 @@ interface AnalysisRow {
   created_at: string | null
 }
 
+interface VectorContext {
+  id: string | number | null
+  symbol: string | null
+  title: string | null
+  content: string
+  similarity: number | null
+  metadata: Record<string, unknown>
+}
+
 interface EnrichedCompany {
   symbol: string
   name: string | null
@@ -88,6 +97,13 @@ const INDUSTRY_KEYWORDS: Record<string, string[]> = {
   'dầu khí': ['dầu khí', 'oil', 'gas'],
   'điện': ['điện', 'power', 'tiện ích'],
 }
+
+const SPECIAL_GROUPS: Array<{ keywords: string[]; symbols: string[] }> = [
+  {
+    keywords: ['họ vin', 'dong ho vin', 'dòng họ vin', 'vingroup', 'nhóm vin'],
+    symbols: ['VIC', 'VHM', 'VRE', 'VPL'],
+  },
+]
 
 function parsePathSymbol(path?: string): string | null {
   const match = path?.match(/\/company\/([A-Za-z0-9]+)/)
@@ -123,11 +139,30 @@ function formatVndThousand(value: number | null | undefined): string {
   return `${Math.round(value * 1000).toLocaleString('vi-VN')} ₫`
 }
 
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : fallback
+}
+
+function normalizeText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  return text.length ? text : null
+}
+
+function metadataSymbol(metadata: Record<string, unknown>, row: Record<string, any>): string | null {
+  const value = metadata.symbol || metadata.stock_symbol || metadata.ticker || row.symbol
+  if (typeof value === 'string' && value.trim()) return value.trim().toUpperCase()
+  return null
+}
+
 function summarizeReportData(data: Record<string, unknown> | null | undefined) {
   if (!data) return {}
   const entries = Object.entries(data)
     .filter(([, value]) => value !== null && value !== undefined && typeof value !== 'object')
-    .slice(0, 40)
+    .slice(0, 18)
   return Object.fromEntries(entries)
 }
 
@@ -144,7 +179,6 @@ function latestReportsByType(reports: FinancialReport[]) {
       period: `Q${report.quarter}/${report.year}`,
       type: report.report_type,
       data: summarizeReportData(report.report_data),
-      raw_text: report.raw_text?.slice(0, 1200) || null,
     })
   }
   return result
@@ -179,22 +213,114 @@ function priceStats(rows: PriceRow[]) {
   })
 }
 
+function normalizeVectorRows(rows: any[]): VectorContext[] {
+  return rows
+    .map(row => {
+      const metadata = (row.metadata && typeof row.metadata === 'object' ? row.metadata : row.meta || {}) as Record<string, unknown>
+      const content = normalizeText(row.content)
+        || normalizeText(row.text)
+        || normalizeText(row.chunk)
+        || normalizeText(row.body)
+        || normalizeText(row.raw_text)
+      if (!content) return null
+
+      return {
+        id: row.id ?? row.document_id ?? null,
+        symbol: metadataSymbol(metadata, row),
+        title: normalizeText(row.title) || normalizeText(metadata.title) || normalizeText(metadata.source),
+        content: content.slice(0, 1200),
+        similarity: num(row.similarity) ?? num(row.score) ?? null,
+        metadata,
+      } satisfies VectorContext
+    })
+    .filter(Boolean) as VectorContext[]
+}
+
+async function embedQuestion(question: string): Promise<number[] | null> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) return null
+
+  const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
+  const model = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small'
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 7000)
+
+  try {
+    const response = await fetch(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ model, input: question }),
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    const embedding = data.data?.[0]?.embedding
+    return Array.isArray(embedding) ? embedding : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function loadVectorContext(supabase: any, question: string, currentPath?: string): Promise<VectorContext[]> {
+  if (process.env.ENABLE_VECTOR_RAG === 'false') return []
+
+  const rpcName = process.env.SUPABASE_VECTOR_RPC || 'match_documents'
+  const matchCount = Math.max(1, Math.min(envNumber('VECTOR_MATCH_COUNT', 8), 16))
+  const matchThreshold = envNumber('VECTOR_MATCH_THRESHOLD', 0.7)
+  const embedding = await embedQuestion(question)
+  if (!embedding) return []
+
+  const pathSymbol = parsePathSymbol(currentPath)
+  const filter = pathSymbol ? { symbol: pathSymbol } : {}
+  const attempts = [
+    { query_embedding: embedding, match_threshold: matchThreshold, match_count: matchCount, filter },
+    { query_embedding: embedding, match_count: matchCount, filter },
+    { query_embedding: embedding, match_count: matchCount },
+    { embedding, match_count: matchCount },
+  ]
+
+  for (const args of attempts) {
+    const { data, error } = await supabase.rpc(rpcName, args)
+    if (!error && Array.isArray(data)) return normalizeVectorRows(data).slice(0, matchCount)
+  }
+
+  return []
+}
+
+function vectorSymbols(matches: VectorContext[]): string[] {
+  return [...new Set(matches.map(item => item.symbol).filter(Boolean) as string[])]
+}
+
 function chooseRelevantCompanies(
   message: string,
   currentPath: string | undefined,
   companies: Company[],
   highlights: Map<string, HighlightRow>,
   kronos: Map<string, KronosRow>,
+  semanticSymbols: string[] = [],
 ) {
   const validSymbols = new Set(companies.map(company => company.symbol))
   const mentioned = extractSymbols(message, validSymbols)
   const pathSymbol = parsePathSymbol(currentPath)
   const industry = detectIndustry(message)
   const lower = message.toLowerCase()
+  const specialGroup = SPECIAL_GROUPS.find(group => group.keywords.some(keyword => lower.includes(keyword)))
 
   let selected = companies.filter(company => mentioned.includes(company.symbol))
   if (selected.length === 0 && pathSymbol && validSymbols.has(pathSymbol)) {
     selected = companies.filter(company => company.symbol === pathSymbol)
+  }
+  if (selected.length === 0 && semanticSymbols.length) {
+    selected = companies.filter(company => semanticSymbols.includes(company.symbol))
+  }
+  if (specialGroup) {
+    selected = companies.filter(company => specialGroup.symbols.includes(company.symbol))
   }
   if (industry) {
     selected = companies.filter(company => company.industry?.toLowerCase().includes(industry))
@@ -215,10 +341,10 @@ function chooseRelevantCompanies(
   if (selected.length === 0) {
     selected = [...companies]
       .sort((a, b) => (highlights.get(b.symbol)?.ai_rating || -1) - (highlights.get(a.symbol)?.ai_rating || -1))
-      .slice(0, 20)
+      .slice(0, 12)
   }
 
-  return selected.slice(0, 25)
+  return selected.slice(0, 12)
 }
 
 function buildCompanySnapshot(
@@ -256,7 +382,7 @@ function buildCompanySnapshot(
       industry: company.industry,
       exchange: company.exchange,
       market_cap: company.market_cap || h?.market_cap || null,
-      profile: company.profile_text?.slice(0, 700) || null,
+      profile: company.profile_text?.slice(0, 300) || null,
       valuation: {
         pe: h?.pe_ratio ?? null,
         pb: h?.pb_ratio ?? null,
@@ -313,6 +439,16 @@ function latestRatio(symbol: string, reports: ReturnType<typeof latestReportsByT
   }
 }
 
+function practicalAction(rating: number | null, signal: string, change: number | null): string {
+  if (signal === 'STRONG_BUY' && (rating || 0) >= 70) return 'MUA THEO DÕI'
+  if (signal === 'BUY' && (rating || 0) >= 60) return 'TĂNG TỶ TRỌNG'
+  if (signal === 'STRONG_SELL') return 'NÉ / GIẢM MẠNH'
+  if (signal === 'SELL') return 'GIẢM TỶ TRỌNG'
+  if ((rating || 0) >= 75 && (change || 0) >= 0) return 'ƯU TIÊN QUAN SÁT'
+  if ((rating || 0) >= 60) return 'GIỮ / THEO DÕI'
+  return 'TRUNG LẬP'
+}
+
 function fallbackAnswer(
   message: string,
   snapshots: ReturnType<typeof buildCompanySnapshot>,
@@ -333,8 +469,9 @@ function fallbackAnswer(
       const roe = formatNumber(ratio.roe ?? num(item.valuation.roe), 1)
       const price = formatVndThousand(num(item.price.current_price))
       const change = formatNumber(num(item.price.change_1m_pct), 1)
+      const action = practicalAction(num(item.ai.rating), signal, num(item.price.change_1m_pct))
       const summary = item.ai.summary ? ` ${item.ai.summary}` : ''
-      return `- ${item.symbol}: ${item.industry || 'n/a'}; giá ${price}; 1M ${change}%; P/E ${pe}; P/B ${pb}; ROE ${roe}%; AIFIA ${rating}; Kronos ${signal}.${summary}`
+      return `- ${item.symbol}: ${action}; ${item.industry || 'n/a'}; giá ${price}; 1M ${change}%; P/E ${pe}; P/B ${pb}; ROE ${roe}%; AIFIA ${rating}; Kronos ${signal}.${summary}`
     }),
   ]
   const risks = top.flatMap(item => item.ai.anomalies || []).slice(0, 6)
@@ -346,7 +483,7 @@ function fallbackAnswer(
       `- ${item.symbol}: close mới nhất ${formatVndThousand(item.latest_close)}, biến động mẫu ${formatNumber(item.period_change_pct, 1)}% trong ${item.sampled_days} phiên.`
     ))
   }
-  lines.push('', 'Kết luận: đây là bản tổng hợp rule-based từ dữ liệu đang có. Khi cấu hình OPENAI_API_KEY, AIFIA sẽ dùng model để hiểu câu hỏi sâu hơn, so sánh nhiều bảng và viết luận điểm tự nhiên hơn.')
+  lines.push('', 'Kết luận: đây là bản tổng hợp rule-based từ dữ liệu đang có. AIFIA dùng nhánh này khi AI provider chưa phản hồi kịp, chưa được cấu hình, hoặc tạm lỗi; dữ liệu bảng và tín hiệu Kronos vẫn được giữ để tránh trả lời rỗng.')
   return lines.join('\n')
 }
 
@@ -361,59 +498,71 @@ async function askOpenAI(question: string, context: unknown) {
     'Trả lời bằng tiếng Việt, đúng ngữ cảnh câu hỏi, ưu tiên dữ liệu đã cung cấp.',
     'Không bịa dữ liệu. Nếu dữ liệu thiếu, nói rõ thiếu phần nào.',
     'Tổng hợp từ nhiều bảng: hồ sơ công ty, highlights, BCTC, giá, Kronos, analysis_results, macro nếu có.',
-    'Không đưa khuyến nghị đầu tư chắc chắn. Nêu rủi ro và các điểm cần kiểm chứng.',
-    'Định dạng dễ đọc: nhận định chính, dữ liệu hỗ trợ, rủi ro, kết luận thực hành.',
+    'Nếu có semantic_retrieval, ưu tiên các đoạn match vector cho câu hỏi định tính hoặc thông tin ngoài bảng số.',
+    'Khi người dùng hỏi mua/bán, phân loại thực hành bằng các nhãn: MUA THEO DÕI, TĂNG TỶ TRỌNG, GIỮ/THEO DÕI, GIẢM TỶ TRỌNG, NÉ. Luôn kèm điều kiện xác nhận và rủi ro.',
+    'Không đưa cam kết lợi nhuận hoặc khuyến nghị chắc chắn. Nêu rõ dữ liệu hỗ trợ, điểm thiếu, và các điểm cần kiểm chứng.',
+    'Định dạng dễ đọc: nhận định chính, tín hiệu mua/bán, dữ liệu hỗ trợ, rủi ro, kết luận thực hành.',
   ].join('\n')
   const userContent = `Câu hỏi người dùng:\n${question}\n\nDữ liệu nội bộ AIFIA dạng JSON:\n${JSON.stringify(context)}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), envNumber('AI_CHAT_TIMEOUT_MS', 35000))
 
-  if (!baseUrl.includes('api.openai.com')) {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+  try {
+    if (!baseUrl.includes('api.openai.com')) {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: instructions },
+            { role: 'user', content: userContent },
+          ],
+          temperature: 0.2,
+          max_tokens: 900,
+        }),
+      })
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '')
+        throw new Error(`AI provider ${response.status}: ${detail}`)
+      }
+      const data = await response.json()
+      return data.choices?.[0]?.message?.content || null
+    }
+
+    const response = await fetch(`${baseUrl}/responses`, {
       method: 'POST',
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
+      signal: controller.signal,
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: instructions },
-          { role: 'user', content: userContent },
-        ],
-        temperature: 0.2,
-        max_tokens: 1200,
+        instructions,
+        input: userContent,
+        max_output_tokens: 900,
       }),
     })
 
     if (!response.ok) {
       const detail = await response.text().catch(() => '')
-      throw new Error(`AI provider ${response.status}: ${detail}`)
+      throw new Error(`OpenAI ${response.status}: ${detail}`)
     }
     const data = await response.json()
-    return data.choices?.[0]?.message?.content || null
+    return data.output_text
+      || data.output?.flatMap((item: any) => item.content || []).map((part: any) => part.text).filter(Boolean).join('\n')
+      || null
+  } finally {
+    clearTimeout(timeout)
   }
-
-  const response = await fetch(`${baseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      instructions,
-      input: userContent,
-      max_output_tokens: 1200,
-    }),
-  })
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
-    throw new Error(`OpenAI ${response.status}: ${detail}`)
-  }
-  const data = await response.json()
-  return data.output_text
-    || data.output?.flatMap((item: any) => item.content || []).map((part: any) => part.text).filter(Boolean).join('\n')
-    || null
 }
 
 export async function POST(req: NextRequest) {
@@ -429,11 +578,12 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey)
-  const [companiesRes, highlightsRes, kronosRes, macroRes] = await Promise.all([
+  const [companiesRes, highlightsRes, kronosRes, macroRes, semanticMatches] = await Promise.all([
     supabase.from('companies').select('symbol, name, industry, exchange, market_cap, profile_text').limit(200),
     supabase.from('company_highlights').select('*').limit(200),
     supabase.from('kronos_predictions').select('symbol, prediction_date, metrics, predicted_ohlcv').order('prediction_date', { ascending: false }).limit(200),
     supabase.from('macro_data').select('indicator, value, unit, period, source').limit(80),
+    loadVectorContext(supabase, message, currentPath).catch(() => []),
   ])
 
   if (companiesRes.error) throw companiesRes.error
@@ -444,7 +594,7 @@ export async function POST(req: NextRequest) {
     if (!kronos.has(item.symbol)) kronos.set(item.symbol, item)
   }
 
-  const relevantCompanies = chooseRelevantCompanies(message, currentPath, companies, highlights, kronos)
+  const relevantCompanies = chooseRelevantCompanies(message, currentPath, companies, highlights, kronos, vectorSymbols(semanticMatches))
   const symbols = relevantCompanies.map(company => company.symbol)
 
   const [financialRes, priceRes, analysisRes] = symbols.length ? await Promise.all([
@@ -454,19 +604,19 @@ export async function POST(req: NextRequest) {
       .in('symbol', symbols)
       .order('year', { ascending: false })
       .order('quarter', { ascending: false })
-      .limit(Math.min(symbols.length * 12, 240)),
+      .limit(Math.min(symbols.length * 8, 80)),
     supabase
       .from('price_history')
       .select('symbol, date, close, volume')
       .in('symbol', symbols)
       .order('date', { ascending: false })
-      .limit(Math.min(symbols.length * 260, 2500)),
+      .limit(Math.min(symbols.length * 130, 1000)),
     supabase
       .from('analysis_results')
       .select('symbol, analysis_type, summary, score, recommendations, result, created_at')
       .in('symbol', symbols)
       .order('created_at', { ascending: false })
-      .limit(Math.min(symbols.length * 4, 100)),
+      .limit(Math.min(symbols.length * 2, 40)),
   ]) : [{ data: [] }, { data: [] }, { data: [] }]
 
   const financialReports = (financialRes.data || []) as FinancialReport[]
@@ -481,10 +631,15 @@ export async function POST(req: NextRequest) {
     user_question: message,
     current_path: currentPath || null,
     selected_symbols: symbols,
-    companies: snapshots,
-    latest_financial_reports: latestReports,
-    price_stats: stats,
-    macro_data: macroRes.data || [],
+    companies: snapshots.slice(0, 8),
+    latest_financial_reports: latestReports.slice(0, 24),
+    price_stats: stats.slice(0, 8),
+    macro_data: (macroRes.data || []).slice(0, 20),
+    semantic_retrieval: semanticMatches,
+    retrieval: {
+      vector_rpc: process.env.SUPABASE_VECTOR_RPC || 'match_documents',
+      vector_matches: semanticMatches.length,
+    },
   }
 
   let answer: string
