@@ -2,6 +2,14 @@
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+from dotenv import load_dotenv
+
+# Auto-load .env from project root at import time
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(_project_root, ".env")
+if os.path.exists(_env_path):
+    load_dotenv(_env_path, override=False)
+
 
 @dataclass
 class CrawlerConfig:

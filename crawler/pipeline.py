@@ -39,6 +39,9 @@ class RateLimiter:
         self.request_times.append(time.time())
 
 
+INDEX_SYMBOLS = {"VNINDEX", "HNXINDEX", "UPCOMINDEX", "VN30", "VN-INDEX"}
+
+
 class CrawlPipeline:
     """Main data collection orchestrator for AIFIA.
     
@@ -127,10 +130,16 @@ class CrawlPipeline:
         return symbols
     
     def _process_company(self, symbol: str):
-        """Process a single company: info + reports + prices."""
+        """Process a single symbol: info + reports + prices.
+        Index symbols (VNINDEX, HNXINDEX, etc.) only get price history.
+        """
         try:
-            self._crawl_company_info(symbol)
-            self._crawl_financial_reports(symbol)
+            is_index = symbol.upper() in INDEX_SYMBOLS
+            if not is_index:
+                self._crawl_company_info(symbol)
+                self._crawl_financial_reports(symbol)
+            else:
+                print(f"  📊 Index symbol — crawling prices only")
             self._crawl_price_history(symbol)
             self.stats["symbols_with_data"].append(symbol)
         except Exception as e:

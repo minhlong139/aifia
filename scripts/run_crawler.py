@@ -72,6 +72,12 @@ def main():
     print(f"📋 Processing {len(symbols)} symbols: {symbols[:5]}...{symbols[-3:]}" if len(symbols) > 8 else f"📋 Processing {len(symbols)} symbols: {symbols}")
     
     # Chế độ chạy ──────────────────────────────
+    # Ensure market indices (VNINDEX, etc.) are always crawled for prices
+    for index_sym in MARKET_INDEX_SYMBOLS:
+        if index_sym not in symbols:
+            symbols.append(index_sym)
+            print(f"📌 Added market index: {index_sym}")
+
     if args.intraday:
         print("⏱️  INTRADAY MODE — VN30 snapshot")
         # Intraday: chỉ crawl VN30 hoặc top nhóm
@@ -89,9 +95,6 @@ def main():
     
     if args.price_only:
         print("💹 PRICE-ONLY MODE" + (" (incremental)" if args.incremental else ""))
-        for index_symbol in MARKET_INDEX_SYMBOLS:
-            if index_symbol not in symbols:
-                symbols.append(index_symbol)
         for i, sym in enumerate(symbols, 1):
             print(f"\n[{i}/{len(symbols)}] {sym}...")
             pipeline._crawl_price_history(sym)

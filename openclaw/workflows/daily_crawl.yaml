@@ -10,9 +10,14 @@ schedule:
 payload:
   kind: agentTurn
   message: >
-    Run AIFIA daily crawl pipeline. Execute:
-    cd /opt/openclaw/.openclaw/workspace/aifia && python scripts/run_crawler.py
-    
+    Run AIFIA daily crawl pipeline. Execute in sequence:
+
+    1. Full crawl (companies + financials + prices for VN100, plus VNINDEX):
+       cd /opt/openclaw/.openclaw/workspace/aifia && python scripts/run_crawler.py --price-only --incremental
+
+    2. Also run dedicated VNINDEX crawl to ensure homepage chart has data:
+       cd /opt/openclaw/.openclaw/workspace/aifia && python scripts/crawl_vnindex.py --incremental
+
     If Supabase is not configured, run in dry-run mode. Report summary of what was crawled.
 delivery:
   mode: announce

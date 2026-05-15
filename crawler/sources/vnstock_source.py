@@ -269,6 +269,75 @@ class VnstockSource:
             })
         return records
     
+    def _fetch_range(self, symbol: str, api_func, start: str, end: str, chunk_months: int = 6):
+        """Fetch price data in overlapping chunks to work around API result limits.
+        vnstock thường giới hạn ~100 bản ghi mỗi lần gọi, nên phải chia nhỏ.
+        """
+        all_items = []  # list of (date_str, row)
+        seen_dates = set()
+
+        s = datetime.strptime(start, "%Y-%m-%d")
+        e = datetime.strptime(end, "%Y-%m-%d")
+        
+        # Chunk từ cuối về đầu (mới nhất trước) để incremental crawl hiệu quả
+        chunk_end = e
+        while chunk_end > s:
+            # Tính chunk_start: lùi chunk_months tháng + overlap 1 tuần
+            chunk_start = chunk_end - timedelta(days=chunk_months * 30 + 7)
+            if chunk_start < s:
+                chunk_start = s
+
+            cs = chunk_start.strftime("%Y-%m-%d")
+            ce = chunk_end.strftime("%Y-%m-%d")
+
+            try:
+                df = self._safe_call(api_func, start=cs, end=ce)
+            except Exception as ex:
+                print(f"    ⚠️  Chunk {cs}→{ce} failed: {ex}")
+                break
+
+            if df is None or df.empty:
+                # Không còn dữ liệu -> dừng
+                break
+
+            for _, row in df.iterrows():
+                t = self._row_value(row, 'time', 'date', 'tradingDate', 'reportDate')
+                if t is None:
+                    continue
+                dt_str = str(pd.to_datetime(t).date())
+                if dt_str not in seen_dates:
+                    seen_dates.add(dt_str)
+                    all_items.append((dt_str, row))
+
+            # Nếu chunk_start về đến s thì xong
+            if chunk_start <= s:
+                break
+
+            # Dịch chunk_end về trước chunk_start (với overlap 1 ngày)
+            chunk_end = chunk_start + timedelta(days=1)
+
+        # Chuyển đổi records
+        result = []
+        for dt_str, row in all_items:
+            open_price = self._row_value(row, 'open', 'Open')
+            high = self._row_value(row, 'high', 'High')
+            low = self._row_value(row, 'low', 'Low')
+            close = self._row_value(row, 'close', 'Close', 'value')
+            volume = self._row_value(row, 'volume', 'Volume', 'totalVolume')
+            result.append({
+                "symbol": symbol,
+                "date": dt_str,
+                "open": float(open_price) if open_price is not None else None,
+                "high": float(high) if high is not None else None,
+                "low": float(low) if low is not None else None,
+                "close": float(close) if close is not None else None,
+                "volume": int(volume) if volume is not None else 0,
+                "source": "vnstock",
+                "ingested_at": datetime.now().isoformat(),
+            })
+
+        return result
+
     def get_index_history(self, symbol: str, start: str = None,
                           end: str = None) -> List[Dict]:
         """Get historical OHLCV for market indices such as VNINDEX."""
@@ -284,8 +353,7 @@ class VnstockSource:
                 from vnstock_data import Market
 
             market = Market()
-            df = self._safe_call(market.index(normalized).ohlcv, start=start, end=end)
-            return self._price_records_from_df(df, normalized)
+            return self._fetch_range(normalized, market.index(normalized).ohlcv, start, end)
         except Exception as e:
             print(f"  [Vnstock] Error getting index price for {symbol}: {e}")
             return []
@@ -303,10 +371,17 @@ class VnstockSource:
         
         try:
             try:
-                df = self._safe_call(quote.history, start=start, end=end, interval='d')
+                return self._fetch_range(
+                    normalized,
+                    lambda s, e: quote.history(start=s, end=e, interval='d'),
+                    start, end
+                )
             except TypeError:
-                df = self._safe_call(quote.history, start=start, end=end)
-            return self._price_records_from_df(df, symbol)
+                return self._fetch_range(
+                    normalized,
+                    lambda s, e: quote.history(start=s, end=e),
+                    start, end
+                )
         except Exception as e:
             print(f"  [Vnstock] Error getting price for {symbol}: {e}")
         
