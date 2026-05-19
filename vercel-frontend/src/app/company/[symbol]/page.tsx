@@ -325,7 +325,7 @@ export default function CompanyPage() {
           <MarketChart
             symbol={curSymbol}
             title={`Diễn biến giá ${curSymbol}`}
-            subtitle="OHLCV lịch sử từ Vnstock, lấy qua Supabase để tải nhanh trên Vercel"
+            subtitle=""
             kind="stock"
             defaultRange="6M"
           />
@@ -337,8 +337,8 @@ export default function CompanyPage() {
                 <div>
                   <h2 className="text-lg font-semibold mb-1">🤖 AIFIA Đánh giá</h2>
                   <div className="text-xs text-gray-500">
-                    {analysis?.metadata?.report_date || analysis?.created_at?.slice(0,10) || 'Mới nhất'}
-                    {anResult?.model_version && ` · ${anResult.model_version}`}
+                    {analysis?.created_at ? new Date(analysis.created_at).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—'}
+                    {anVerdict && ` · ${anVerdict}`}
                   </div>
                 </div>
                 <div className="text-center">
@@ -594,20 +594,6 @@ export default function CompanyPage() {
           })()}
 
           {/* ── Reports List ── */}
-          <div className="bg-white rounded-xl p-5 shadow-sm border">
-            <h2 className="text-lg font-semibold mb-3">📊 Danh sách BCTC</h2>
-            {reports.length === 0 ? <p className="text-gray-400 text-sm">Chưa có dữ liệu</p> : (
-              <div className="max-h-64 overflow-y-auto text-sm space-y-1">
-                {reports.slice(0, 20).map((r: any, i: number) => (
-                  <div key={i} className="flex justify-between text-gray-600 py-1 border-b border-gray-50">
-                    <span>Q{r.quarter}/{r.year}</span>
-                    <span className="text-xs text-gray-400">{r.report_type === 'income_statement' ? 'KQKD' : r.report_type === 'balance_sheet' ? 'CĐKT' : r.report_type === 'cash_flow' ? 'LCTT' : r.report_type}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
         </div>
       </div>
     </main>

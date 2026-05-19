@@ -174,7 +174,15 @@ export default function HomePage() {
           </div>
           <div className="text-right">
             <div className="text-xs text-gray-400">{dataCount}/{companies.length} có dữ liệu</div>
-            <div className="text-[10px] text-gray-300">Cập nhật: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
+            <div className="text-[10px] text-gray-300">
+              {(() => {
+                const dates = Object.values(coverage)
+                  .map((c: any) => c?.kronos?.prediction_date || c?.kronos?.created_at)
+                  .filter(Boolean)
+                  .sort()
+                return dates.length ? `Cập nhật: ${dates[dates.length - 1]}` : 'Đang tải...'
+              })()}
+            </div>
           </div>
         </div>
         {/* ChatBot replaces the old search input */}
@@ -188,7 +196,6 @@ export default function HomePage() {
             <MarketChart
               symbol="VNINDEX"
               title="Toàn cảnh VNINDEX"
-              subtitle="Dữ liệu giá thị trường từ luồng Vnstock đã đồng bộ vào Supabase"
               kind="index"
               defaultRange="6M"
               className="lg:col-span-2"
@@ -201,7 +208,6 @@ export default function HomePage() {
                 </div>
                 <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{recommendations.length}</span>
               </div>
-              <div className="mb-2 text-[10px] text-gray-300">Cập nhật: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
               {recommendations.length === 0 ? (
                 <div className="py-10 text-center text-sm text-gray-400">Chưa có dữ liệu khuyến nghị</div>
               ) : (
@@ -363,8 +369,16 @@ export default function HomePage() {
       </div>
 
       <footer className="border-t mt-6 py-4 text-center text-xs text-gray-400">
-        <p>AIFIA — AI Financial Intelligence Assistant • Dữ liệu từ Vnstock</p>
-        <p className="mt-1 text-[10px] text-gray-300">Dữ liệu cập nhật lúc: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
+        <p>AIFIA — AI Financial Intelligence Assistant</p>
+        <p className="mt-1 text-[10px] text-gray-300">
+          Dữ liệu cập nhật: {(() => {
+            const dates = Object.values(coverage)
+              .map((c: any) => c?.kronos?.prediction_date || c?.kronos?.created_at)
+              .filter(Boolean)
+              .sort()
+            return dates.length ? dates[dates.length - 1] : '—'
+          })()}
+        </p>
       </footer>
     </main>
   )

@@ -146,7 +146,13 @@ export async function POST(req: NextRequest) {
           if (!coverage[k.symbol]) {
             coverage[k.symbol] = { financial: finSet.has(k.symbol), price: priceSet.has(k.symbol), kronos: null }
           }
-          if (!coverage[k.symbol].kronos) coverage[k.symbol].kronos = k.metrics
+          if (!coverage[k.symbol].kronos) {
+            coverage[k.symbol].kronos = {
+              ...k.metrics,
+              prediction_date: k.prediction_date,
+              created_at: k.created_at,
+            }
+          }
         }
         return NextResponse.json(coverage)
       }

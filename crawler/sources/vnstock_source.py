@@ -373,13 +373,13 @@ class VnstockSource:
             try:
                 return self._fetch_range(
                     normalized,
-                    lambda s, e: quote.history(start=s, end=e, interval='d'),
+                    lambda start, end: quote.history(start=start, end=end, interval='d'),
                     start, end
                 )
             except TypeError:
                 return self._fetch_range(
                     normalized,
-                    lambda s, e: quote.history(start=s, end=e),
+                    lambda start, end: quote.history(start=start, end=end),
                     start, end
                 )
         except Exception as e:
