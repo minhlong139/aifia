@@ -172,7 +172,10 @@ export default function HomePage() {
             <h1 className="text-lg font-bold">AIFIA</h1>
             <span className="text-gray-500 text-xs hidden sm:inline">AI Financial Intelligence</span>
           </div>
-          <div className="text-xs text-gray-400">{dataCount}/{companies.length} có dữ liệu</div>
+          <div className="text-right">
+            <div className="text-xs text-gray-400">{dataCount}/{companies.length} có dữ liệu</div>
+            <div className="text-[10px] text-gray-300">Cập nhật: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
+          </div>
         </div>
         {/* ChatBot replaces the old search input */}
         <ChatBot onResultsChange={handleResultsChange} />
@@ -198,6 +201,7 @@ export default function HomePage() {
                 </div>
                 <span className="rounded bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{recommendations.length}</span>
               </div>
+              <div className="mb-2 text-[10px] text-gray-300">Cập nhật: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</div>
               {recommendations.length === 0 ? (
                 <div className="py-10 text-center text-sm text-gray-400">Chưa có dữ liệu khuyến nghị</div>
               ) : (
@@ -360,6 +364,7 @@ export default function HomePage() {
 
       <footer className="border-t mt-6 py-4 text-center text-xs text-gray-400">
         <p>AIFIA — AI Financial Intelligence Assistant • Dữ liệu từ Vnstock</p>
+        <p className="mt-1 text-[10px] text-gray-300">Dữ liệu cập nhật lúc: {new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
       </footer>
     </main>
   )

@@ -7,7 +7,15 @@ import time
 from datetime import datetime, timedelta
 import pandas as pd
 
-sys.path.insert(0, '/tmp/kronos_repo')
+AIFIA_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KRONOS_PATHS = [
+    os.path.join(AIFIA_DIR, 'kronos_repo'),
+    '/tmp/kronos_repo',
+]
+for kp in KRONOS_PATHS:
+    if os.path.isdir(kp):
+        sys.path.insert(0, kp)
+        break
 from model import Kronos, KronosTokenizer, KronosPredictor
 
 AIFIA_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

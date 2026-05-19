@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
           supabase.from('company_highlights').select('symbol, current_price').limit(500),
           supabase
             .from('kronos_predictions')
-            .select('symbol, metrics, prediction_date')
+            .select('symbol, metrics, prediction_date, created_at')
             .order('prediction_date', { ascending: false })
             .limit(500),
         ])

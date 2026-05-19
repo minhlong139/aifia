@@ -199,7 +199,7 @@ class CrawlPipeline:
             print("⚠️  empty")
             return
         
-        self._save_json(f"price_{symbol}.json", prices)
+        self._save_json(f"price_{symbol}.json", prices, merge=True)
         
         if self.storage.is_connected():
             self.storage.upsert_price_data(prices)
@@ -211,12 +211,30 @@ class CrawlPipeline:
     # Local file helpers (backup when no Supabase)
     # ──────────────────────────────────────────────
     
-    def _save_json(self, filename: str, data):
-        """Save data to local JSON file as backup."""
+    def _save_json(self, filename: str, data, merge: bool = False):
+        """Save data to local JSON file as backup.
+        
+        Args:
+            filename: Output filename
+            data: New data to save
+            merge: If True, merge with existing file (for price data).
+                   If False, overwrite (for company info, financials)
+        """
         path = os.path.join(self.data_dir, filename)
         try:
-            with open(path, 'w') as f:
-                json.dump(data, f, indent=2, default=str)
+            if merge and os.path.exists(path):
+                with open(path) as f:
+                    existing = json.load(f)
+                # Merge by date, deduplicate
+                existing_dates = {r.get("date") for r in existing}
+                new_items = [r for r in data if r.get("date") not in existing_dates]
+                combined = existing + new_items
+                combined.sort(key=lambda r: r.get("date", ""))
+                with open(path, 'w') as f:
+                    json.dump(combined, f, indent=2, default=str)
+            else:
+                with open(path, 'w') as f:
+                    json.dump(data, f, indent=2, default=str)
         except Exception as e:
             print(f"    ⚠️  Failed to save {filename}: {e}")
     

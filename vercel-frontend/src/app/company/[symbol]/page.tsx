@@ -569,7 +569,8 @@ export default function CompanyPage() {
             const sc: Record<string,string> = {STRONG_BUY:'text-green-700 bg-green-50 border-green-200', BUY:'text-green-600 bg-green-50 border-green-200', NEUTRAL:'text-yellow-700 bg-yellow-50 border-yellow-200', SELL:'text-red-600 bg-red-50 border-red-200', STRONG_SELL:'text-red-700 bg-red-50 border-red-200'}
             return (
               <div className="bg-white rounded-xl p-5 shadow-sm border">
-                <h2 className="text-lg font-semibold mb-3">🔮 Dự báo Kronos</h2>
+                <h2 className="text-lg font-semibold mb-1">🔮 Dự báo Kronos</h2>
+                <div className="text-[10px] text-gray-300 mb-3">Cập nhật: {kronos?.prediction_date ? new Date(kronos.prediction_date).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '—'}</div>
                 <div className={`inline-block px-3 py-1 rounded-full text-sm font-bold border ${sc[m.signal]||''} mb-3`}>
                   {m.signal} {m.change_pct>0?'📈':'📉'}
                 </div>

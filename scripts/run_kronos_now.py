@@ -5,8 +5,16 @@ import os
 import json
 import pandas as pd
 
-# Add Kronos repo to path
-sys.path.insert(0, '/tmp/kronos_repo')
+# Add Kronos repo to path (try permanent location first, then /tmp)
+AIFIA_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+KRONOS_PATHS = [
+    os.path.join(AIFIA_DIR, 'kronos_repo'),
+    '/tmp/kronos_repo',
+]
+for kp in KRONOS_PATHS:
+    if os.path.isdir(kp):
+        sys.path.insert(0, kp)
+        break
 
 from model import Kronos, KronosTokenizer, KronosPredictor
 
