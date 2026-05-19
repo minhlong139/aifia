@@ -268,7 +268,9 @@ async function embedQuestion(question: string): Promise<number[] | null> {
 }
 
 async function loadVectorContext(supabase: any, question: string, currentPath?: string): Promise<VectorContext[]> {
-  if (process.env.ENABLE_VECTOR_RAG === 'false') return []
+  if (process.env.ENABLE_VECTOR_RAG !== 'true') return []
+  // Only use RAG for complex qualitative questions, not simple listings
+  if (question.length < 20 || /(mã|cp|cổ phiếu|stock).*(nào|gì|strong|buy|sell|mua|bán)/i.test(question)) return []
 
   const rpcName = process.env.SUPABASE_VECTOR_RPC || 'match_documents'
   const matchCount = Math.max(1, Math.min(envNumber('VECTOR_MATCH_COUNT', 8), 16))
@@ -439,7 +441,16 @@ function latestRatio(symbol: string, reports: ReturnType<typeof latestReportsByT
   }
 }
 
-function practicalAction(rating: number | null, signal: string, change: number | null): string {
+function isSimpleListingQuery(message: string): boolean {
+  const lower = message.toLowerCase()
+  const listingPatterns = [
+    /(mã|cp|cổ phiếu|stock).*(nào|gì).*(kronos|strong.?buy|strong.?sell|buy|sell|mua|bán|tăng|giảm)/,
+    /(kronos|strong.?buy|strong.?sell).*(mã|cp|cổ phiếu|stock).*(nào|gì)/,
+    /(liệt kê|danh sách|list|top).*(mã|cp|cổ phiếu|strong.?buy|strong.?sell)/,
+    /(khuyến nghị|khuyến nghị|recommend).*(strong.?buy|strong.?sell|mua|bán)/,
+  ]
+  return listingPatterns.some(p => p.test(lower))
+}
   if (signal === 'STRONG_BUY' && (rating || 0) >= 70) return 'MUA THEO DÕI'
   if (signal === 'BUY' && (rating || 0) >= 60) return 'TĂNG TỶ TRỌNG'
   if (signal === 'STRONG_SELL') return 'NÉ / GIẢM MẠNH'
@@ -505,7 +516,7 @@ async function askOpenAI(question: string, context: unknown) {
   ].join('\n')
   const userContent = `Câu hỏi người dùng:\n${question}\n\nDữ liệu nội bộ AIFIA dạng JSON:\n${JSON.stringify(context)}`
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), envNumber('AI_CHAT_TIMEOUT_MS', 35000))
+  const timeout = setTimeout(() => controller.abort(), Math.min(envNumber('AI_CHAT_TIMEOUT_MS', 12000), 20000))
 
   try {
     if (!baseUrl.includes('api.openai.com')) {
@@ -604,13 +615,13 @@ export async function POST(req: NextRequest) {
       .in('symbol', symbols)
       .order('year', { ascending: false })
       .order('quarter', { ascending: false })
-      .limit(Math.min(symbols.length * 8, 80)),
+      .limit(Math.min(symbols.length * 3, 30)),
     supabase
       .from('price_history')
       .select('symbol, date, close, volume')
       .in('symbol', symbols)
       .order('date', { ascending: false })
-      .limit(Math.min(symbols.length * 130, 1000)),
+      .limit(Math.min(symbols.length * 30, 500)),
     supabase
       .from('analysis_results')
       .select('symbol, analysis_type, summary, score, recommendations, result, created_at')
@@ -644,13 +655,19 @@ export async function POST(req: NextRequest) {
 
   let answer: string
   let usedAi = false
-  try {
-    const aiAnswer = await askOpenAI(message, context)
-    answer = aiAnswer || fallbackAnswer(message, snapshots, stats, latestReports)
-    usedAi = Boolean(aiAnswer)
-  } catch (error) {
-    console.error('AI chat error:', error)
+  
+  // Simple listing queries → skip AI, use fast fallback
+  if (isSimpleListingQuery(message)) {
     answer = fallbackAnswer(message, snapshots, stats, latestReports)
+  } else {
+    try {
+      const aiAnswer = await askOpenAI(message, context)
+      answer = aiAnswer || fallbackAnswer(message, snapshots, stats, latestReports)
+      usedAi = Boolean(aiAnswer)
+    } catch (error) {
+      console.error('AI chat error:', error)
+      answer = fallbackAnswer(message, snapshots, stats, latestReports)
+    }
   }
 
   return NextResponse.json({
