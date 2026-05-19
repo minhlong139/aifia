@@ -331,7 +331,7 @@ export default function CompanyPage() {
           />
 
           {/* ── AIFIA Score & Analysis ── */}
-          {anScore !== undefined && anScore !== null && (
+          {anScore !== undefined && anScore !== null && anScore > 0 && anVerdict !== 'LỖI' && (
             <div className={`rounded-xl p-5 shadow-sm border ${scoreBg(anScore)}`}>
               <div className="flex items-start justify-between flex-wrap gap-2">
                 <div>
