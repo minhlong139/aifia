@@ -284,7 +284,7 @@ class DailyStockAnalyzer:
         qr = round((current_assets - (inventory or 0)) / current_liab, 2) \
             if current_assets and current_liab else None
         cash_ratio = round((cash + (short_invest or 0)) / total_assets * 100, 1) \
-            if total_assets and total_assets > 0 else None
+            if cash is not None and total_assets and total_assets > 0 else None
         ic = round(ebit / interest_expense, 1) \
             if ebit and interest_expense and interest_expense > 0 else None
         dso = round(receivables / revenue * 90, 1) \
