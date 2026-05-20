@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, useMemo } from 'react'
 import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis, getCompanyHighlight } from '@/lib/supabase'
 import ChatBot from '@/components/ChatBot'
 import MarketChart from '@/components/MarketChart'
+import { listReports } from '@/data/reports'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
@@ -562,6 +563,29 @@ export default function CompanyPage() {
 
         {/* ════ RIGHT / SIDEBAR ════ */}
         <div className="space-y-4">
+
+          {/* ── Báo cáo chi tiết ── */}
+          {(() => {
+            const reports = listReports(curSymbol)
+            if (!reports.length) return null
+            return (
+              <div className="bg-white rounded-xl p-5 shadow-sm border">
+                <h2 className="text-lg font-semibold mb-3">📊 Báo cáo chi tiết</h2>
+                <div className="space-y-2">
+                  {reports.map((r) => (
+                    <a
+                      key={r.date}
+                      href={`/company/${curSymbol}/report/${r.date}`}
+                      className="block p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="text-sm font-medium text-blue-700">{r.title}</div>
+                      <div className="text-xs text-gray-400 mt-0.5">Đọc báo cáo →</div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* ── Kronos ── */}
           {kronos?.metrics && (() => {
