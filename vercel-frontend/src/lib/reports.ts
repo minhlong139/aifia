@@ -4,6 +4,11 @@ import reportMBB from './report-MBB'
 import reportMWG from './report-MWG'
 import reportVCB from './report-VCB'
 import reportVNM from './report-VNM'
+import reportCTG from './report-CTG'
+import reportPNJ from './report-PNJ'
+import reportGAS from './report-GAS'
+import reportVJC from './report-VJC'
+import reportVPB from './report-VPB'
 
 const reports: Record<string, string> = {}
 
@@ -146,12 +151,17 @@ Hỗ trợ: 72.000 → 70.000 → 65.000 | Kháng cự: 78.000 → 84.000
 *Cập nhật 20/05/2026. Nguồn: BCTC FPT Q1/2026, MBS, ACBS, BSC, TradingView, CafeF, Báo Đầu tư.*
 **⚠️ Chỉ mang tính tham khảo, không phải lời khuyên đầu tư.**`
 
-// Sub-agent compiled reports
+// Compiled reports
 reports['HPG:2026-05-20'] = reportHPG
 reports['MBB:2026-05-20'] = reportMBB
 reports['MWG:2026-05-20'] = reportMWG
 reports['VCB:2026-05-20'] = reportVCB
 reports['VNM:2026-05-20'] = reportVNM
+reports['CTG:2026-05-20'] = reportCTG
+reports['PNJ:2026-05-20'] = reportPNJ
+reports['GAS:2026-05-20'] = reportGAS
+reports['VJC:2026-05-20'] = reportVJC
+reports['VPB:2026-05-20'] = reportVPB
 
 export function getReport(symbol: string, date: string): string | null {
   return reports[`${symbol}:${date}`] || null
