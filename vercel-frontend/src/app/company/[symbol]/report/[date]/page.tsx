@@ -1,4 +1,4 @@
-import { getReport } from '@/data/reports'
+import { getReport } from '@/lib/reports'
 import Link from 'next/link'
 
 // Simple markdown-to-JSX renderer

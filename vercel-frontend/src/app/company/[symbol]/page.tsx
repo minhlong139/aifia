@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, useMemo } from 'react'
 import { getCompany, getFinancialReports, getKronosPrediction, getCompanies, getAnalysis, getCompanyHighlight } from '@/lib/supabase'
 import ChatBot from '@/components/ChatBot'
 import MarketChart from '@/components/MarketChart'
-import { listReports } from '@/data/reports'
+import { listReports } from '@/lib/reports'
 
 // ── helpers ──────────────────────────────────────────
 function pick(data: Record<string, any> | undefined, ...keys: string[]) {
