@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
 Merge AI-enhanced batches & upload to Supabase.
-Called after sub-agents finish AI analysis.
-
-Usage:
-    python scripts/ai_upload.py --date YYYY-MM-DD
-    python scripts/ai_upload.py --date-latest
+Replaces ai_upload.py with support for our ai_batch format.
 """
 import os, sys, json, glob
 from datetime import date, datetime
@@ -38,11 +34,11 @@ def load_ai_enhancements(day: str) -> dict:
     for fpath in sorted(glob.glob(os.path.join(day_dir, "ai_batch_*.json"))):
         with open(fpath) as f:
             data = json.load(f)
-        for item in data.get("enhanced_analyses", []):
+        for item in data.get("stocks", []):
             sym = item.get("symbol")
             if sym:
                 merged[sym] = item
-        print(f"  📖 {os.path.basename(fpath)}: {len(data.get('enhanced_analyses',[]))} stocks")
+        print(f"  📖 {os.path.basename(fpath)}: {len(data.get('stocks',[]))} stocks")
 
     return merged
 
@@ -78,16 +74,17 @@ def upload(day: str, ai_data: dict, batch_data: dict):
             "verdict": bd.get("verdict"),
             "metrics": m,
             "anomalies": bd.get("anomalies", []),
-            "ai_commentary": ai.get("ai_commentary", ""),
+            "ai_commentary": ai.get("ai_assessment", ""),
             "strengths": ai.get("strengths", []),
             "weaknesses": ai.get("weaknesses", []),
             "outlook": ai.get("outlook", ""),
-            "key_risks": ai.get("key_risks", []),
+            "key_risks": ai.get("risks", []),
             "report_date": day,
             "model_version": "aifia_v2_ai_enhanced",
         }
 
-        summary = f"Mã {sym} — Điểm {bd.get('score',0)}/100 ({bd.get('verdict','')}). {ai.get('ai_commentary','')[:300]}"
+        commentary = ai.get("ai_assessment", "")
+        summary = f"Mã {sym} — Điểm {bd.get('score',0)}/100 ({bd.get('verdict','')}). {commentary[:300]}"
 
         try:
             storage.client.table("analysis_results").insert({
@@ -100,7 +97,7 @@ def upload(day: str, ai_data: dict, batch_data: dict):
                 "model_version": "aifia_v2_ai_enhanced",
                 "metadata": json.dumps({
                     "report_date": day,
-                    "industry": bd.get("industry"),
+                    "industry": ai.get("industry"),
                     "price": m.get("price"),
                     "has_ai": True,
                 }),

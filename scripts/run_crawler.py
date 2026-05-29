@@ -11,7 +11,7 @@ from datetime import datetime, date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from crawler.config import CrawlerConfig
-from crawler.pipeline import CrawlPipeline
+from crawler.pipeline import CrawlPipeline, INDEX_SYMBOLS
 
 MARKET_INDEX_SYMBOLS = ["VNINDEX"]
 
@@ -88,6 +88,9 @@ def main():
     if args.financial_only:
         print("📊 FINANCIAL-ONLY MODE")
         for i, sym in enumerate(symbols, 1):
+            if sym.upper() in INDEX_SYMBOLS:
+                print(f"\n[{i}/{len(symbols)}] {sym} is a market index. Skipping.")
+                continue
             print(f"\n[{i}/{len(symbols)}] {sym}...")
             pipeline._crawl_financial_reports(sym)
         print(f"\n✅ Done. {pipeline.stats['financial_reports']} records crawled.")

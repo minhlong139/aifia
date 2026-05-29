@@ -304,6 +304,12 @@ kronos_prediction() {
     if [ -n "$latest_pred" ]; then
         log "📁 Latest prediction: $(basename "$latest_pred")"
     fi
+    
+    # Upload to Supabase
+    log "☁️  [UPLOAD] Uploading Kronos predictions to Supabase..."
+    if preflight_supabase; then
+        run_script "upload_kronos" "$SCRIPTS/upload_kronos.py"
+    fi
 }
 
 health_monitor() {

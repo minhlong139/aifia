@@ -148,6 +148,9 @@ class CrawlPipeline:
     
     def _crawl_company_info(self, symbol: str):
         """Crawl company information."""
+        if symbol.upper() in INDEX_SYMBOLS:
+            print("  ⚠️ Index symbol — skipping company info")
+            return
         print(f"  📄 Company info...", end=" ")
         info = self.vnstock.get_company_info_complete(symbol)
         
@@ -168,6 +171,9 @@ class CrawlPipeline:
     
     def _crawl_financial_reports(self, symbol: str):
         """Crawl all financial reports."""
+        if symbol.upper() in INDEX_SYMBOLS:
+            print("  ⚠️ Index symbol — skipping financial reports")
+            return
         print(f"  📊 Financial reports...")
         financials = self.vnstock.get_all_financials(symbol)
         

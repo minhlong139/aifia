@@ -2,13 +2,14 @@
 import reportHPG from './report-HPG'
 import reportMBB from './report-MBB'
 import reportMWG from './report-MWG'
+import reportPNJ from './report-PNJ'
 import reportVCB from './report-VCB'
 import reportVNM from './report-VNM'
 import reportCTG from './report-CTG'
-import reportPNJ from './report-PNJ'
 import reportGAS from './report-GAS'
 import reportVJC from './report-VJC'
 import reportVPB from './report-VPB'
+import reportVHM from './report-VHM'
 
 const reports: Record<string, string> = {}
 
@@ -155,13 +156,14 @@ Hỗ trợ: 72.000 → 70.000 → 65.000 | Kháng cự: 78.000 → 84.000
 reports['HPG:2026-05-20'] = reportHPG
 reports['MBB:2026-05-20'] = reportMBB
 reports['MWG:2026-05-20'] = reportMWG
+reports['PNJ:2026-05-20'] = reportPNJ
 reports['VCB:2026-05-20'] = reportVCB
 reports['VNM:2026-05-20'] = reportVNM
 reports['CTG:2026-05-20'] = reportCTG
-reports['PNJ:2026-05-20'] = reportPNJ
 reports['GAS:2026-05-20'] = reportGAS
 reports['VJC:2026-05-20'] = reportVJC
 reports['VPB:2026-05-20'] = reportVPB
+reports['VHM:2026-05-20'] = reportVHM
 
 export function getReport(symbol: string, date: string): string | null {
   return reports[`${symbol}:${date}`] || null
